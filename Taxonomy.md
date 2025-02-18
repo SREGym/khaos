@@ -2,7 +2,7 @@
 
 Failures are inspired by this [paper](https://ieeexplore.ieee.org/document/8023108).
 
-Ideally, we will have a yaml based interface similar to [ChaosMesh](https://chaos-mesh.org/).
+Ideally, we will have a yaml based interface similar to [ChaosMesh](https://chaos-mesh.org/). There's an example at the end that shows the kind of interface we should use.
 
 ### **Disk Failures (I/O & Storage)**
 
