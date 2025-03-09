@@ -108,4 +108,7 @@ Most BPF operations require **root privileges**. Always run `err_inject` with `s
 sudo ./err_inject <syscall_name> <error_code> <pid>
 ```
 
+### **7. Disable AppArmor**
+If you're running Ubuntu like I am, you might have to [disable AppArmor](https://documentation.ubuntu.com/server/how-to/security/apparmor/index.html) for the program to work.
+
 ---
