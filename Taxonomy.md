@@ -149,7 +149,7 @@ Since most GPU interactions happen via **ioctl() calls to device drivers**, we c
 
 ## **Implementing GPU Fault Injection in Khaos**
 
-### **Option 1: eBPF Hook on `ioctl()`**
+### **eBPF Hook on `ioctl()`**
 
 Most GPU interactions happen through **`ioctl()` calls to `/dev/nvidia0`** (or AMD’s `/dev/dri/card0`). We can hook `ioctl()` via eBPF:
 
@@ -174,7 +174,7 @@ int bpf_prog(struct pt_regs *ctx) {
 }
 ```
 
-### **Option 2: Using `sysfs` for Throttling Faults**
+### **Using `sysfs` for Throttling Faults**
 
 Many GPU properties (temperature, power limits, clock speeds) can be manipulated via **`/sys/class/hwmon/`**.
 
@@ -204,7 +204,7 @@ Or block the driver from loading:
 echo "blacklist nvidia" > /etc/modprobe.d/blacklist-nvidia.conf
 ```
 
-### **Option 4: CUDA Hooking for Fault Injection**
+### *CUDA Hooking for Fault Injection**
 
 For CUDA-specific failures, **intercept CUDA API calls** using `LD_PRELOAD`:
 
@@ -234,9 +234,9 @@ LD_PRELOAD=./fakecuda.so python train_llm.py
 
 ## **Fault Injection Scenarios for LLM Training**
 
-Now that we have multiple failure types, we should **inject them dynamically**.
-
 ### **Example YAML for Khaos GPU Fault Injection**
+
+We don't have this yaml based interface yet, but I would like this project to eventually utilize a yaml based interface similar to chaos-mesh to support easy experimentation.
 
 ```yaml
 failures:
