@@ -1,14 +1,14 @@
 ### **Building**
 To build both static libbpf.a and shared libbpf.so:
 ```bash
-$ pushd libbpf/src
-$ make
+pushd libbpf/src
+make
 ```
 
 Then compile the BPF injector here:
 ```bash
-$ popd
-$ make
+popd
+make #ARCH=arm for arm compilation, default is x86
 ```
 
 You will get a `err_inject` binary file.
