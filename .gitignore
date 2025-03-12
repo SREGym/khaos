@@ -1,4 +1,5 @@
 *.o
 err_inject
+khaos
 *.skel.h
 .vscode/*
