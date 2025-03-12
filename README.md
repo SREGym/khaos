@@ -5,7 +5,7 @@ pushd libbpf/src
 make
 ```
 
-Then compile the BPF injector here:
+Then compile khaos:
 ```bash
 popd
 make #ARCH=arm for arm compilation, default is x86
