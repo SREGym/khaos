@@ -17,7 +17,7 @@ struct {
 } pid_map SEC(".maps");
 
 SEC("kprobe/")
-int prog1(struct pt_regs *ctx)
+int khaos(struct pt_regs *ctx)
 {
 	int pid = bpf_get_current_pid_tgid() & 0xffffffff;
 	int key = 0;

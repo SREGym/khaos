@@ -15,7 +15,7 @@ else ifeq ($(ARCH), arm)
     HOST_CC = aarch64-linux-gnu-gcc
 endif
 
-all: err_inject
+all: khaos
 
 %.bpf.o: %.bpf.c
 	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
@@ -24,8 +24,8 @@ all: err_inject
 %.skel.h: %.bpf.o
 	bpftool gen skeleton $< > $@
 
-err_inject: err_inject.c err_inject.skel.h
+khaos: khaos.c khaos.skel.h
 	$(HOST_CC) -std=c11 -Wall -O2 $(CFLAGS) $< -o $@ $(LDFLAGS) -static -lbpf -lelf -lz -lzstd
 
 clean:
-	rm -rf ebpf err_inject *.o *.skel.h
+	rm -rf ebpf khaos *.o *.skel.h

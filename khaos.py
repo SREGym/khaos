@@ -6,7 +6,7 @@ import helpers
 
 def inject_fault(target_syscall, error_code, pids):
     """Inject a fault into specific processes using BPF."""
-    command = ["sudo", "./err_inject", target_syscall, str(error_code)] + [str(pid) for pid in pids]
+    command = ["sudo", "./khaos", target_syscall, str(error_code)] + [str(pid) for pid in pids]
     
     try:
         subprocess.run(command, check=True)
@@ -16,7 +16,7 @@ def inject_fault(target_syscall, error_code, pids):
 
 def recover_fault(target_syscall):
     """Remove BPF programs from eBPF virtual filesystem."""
-    bpf_folder_path = f"/sys/fs/bpf/err_inject-{target_syscall}"
+    bpf_folder_path = f"/sys/fs/bpf/khaos-{target_syscall}"
     
     try:
         subprocess.run(["sudo", "rm", "-rf", bpf_folder_path], check=True)

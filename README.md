@@ -11,18 +11,18 @@ popd
 make #ARCH=arm for arm compilation, default is x86
 ```
 
-You will get a `err_inject` binary file.
+You will get a `khaos` binary file.
 
 ---
 
 ### **Usage**
 ```sh
-sudo ./err_inject <syscall_name> <error_code> <pid> [<pid> ...]
+sudo ./khaos <syscall_name> <error_code> <pid> [<pid> ...]
 ```
 
 #### **Example: Block `write()` System Call for Process 1234**
 ```sh
-sudo ./err_inject __arm64_sys_write 5 1234
+sudo ./khaos __arm64_sys_write 5 1234
 ```
 - Hooks into `write()` (`__arm64_sys_write`).
 - Injects error `-5` (`EIO`, Input/Output error).
@@ -30,7 +30,7 @@ sudo ./err_inject __arm64_sys_write 5 1234
 
 #### **Example: Prevent a Process from Forking**
 ```sh
-sudo ./err_inject __arm64_sys_fork 1 5678
+sudo ./khaos __arm64_sys_fork 1 5678
 ```
 - Hooks into `fork()` (`__arm64_sys_fork`).
 - Injects error `-1` (`EPERM`, Operation Not Permitted).
@@ -43,7 +43,7 @@ Here are the **system configuration steps** you had to modify in order to run yo
 ---
 
 ## **System Requirements & Setup**
-Before running `err_inject`, ensure your system is properly configured to allow BPF programs to execute.
+Before running `khaos`, ensure your system is properly configured to allow BPF programs to execute.
 
 ### **1. Enable BPF System Calls**
 Verify that your kernel supports BPF by checking:
@@ -103,9 +103,9 @@ sudo ln -s /usr/src/linux-headers-$(uname -r)/arch/arm64/include/generated/uapi/
 ```
 
 ### **6. Run the Program as Root**
-Most BPF operations require **root privileges**. Always run `err_inject` with `sudo`:
+Most BPF operations require **root privileges**. Always run `khaos` with `sudo`:
 ```sh
-sudo ./err_inject <syscall_name> <error_code> <pid>
+sudo ./khaos <syscall_name> <error_code> <pid>
 ```
 
 ### **7. Disable AppArmor**

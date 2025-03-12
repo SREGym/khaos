@@ -4,7 +4,7 @@
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 
-#include "err_inject.skel.h"
+#include "khaos.skel.h"
 
 int main(int argc, char *argv[])
 {
@@ -15,7 +15,7 @@ int main(int argc, char *argv[])
 	int key = 0, ret = 0;
 	unsigned char value = 0;
 	char buf[128] = { 0 };
-	struct err_inject_bpf *obj;
+	struct khaos_bpf *obj;
 	struct bpf_link *link;
 	LIBBPF_OPTS(bpf_ksyscall_opts, opts);
 
@@ -23,7 +23,7 @@ int main(int argc, char *argv[])
 		pids[i] = atoi(argv[i + 3]);
 	}
 
-	obj = err_inject_bpf__open_and_load();
+	obj = khaos_bpf__open_and_load();
 	if (!obj) {
 		return 1;
 	}
@@ -45,7 +45,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	link = bpf_program__attach_ksyscall(obj->progs.prog1, target_syscall,
+	link = bpf_program__attach_ksyscall(obj->progs.khaos, target_syscall,
 					    &opts);
 	if (libbpf_get_error(link)) {
 		fprintf(stderr, "ERROR: bpf_program__attach failed\n");
@@ -54,11 +54,11 @@ int main(int argc, char *argv[])
 		goto cleanup;
 	}
 
-	snprintf(buf, sizeof(buf), "/sys/fs/bpf/err_inject-%s", target_syscall);
+	snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-%s", target_syscall);
 	bpf_link__pin(link, buf);
 	bpf_link__destroy(link);
 
 cleanup:
-	err_inject_bpf__destroy(obj);
+	khaos_bpf__destroy(obj);
 	return ret;
 }
