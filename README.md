@@ -20,27 +20,15 @@ You will get a `khaos` binary file.
 sudo ./khaos <syscall_name> <error_code> <pid> [<pid> ...]
 ```
 
-#### **Example: Block `write()` System Call for Process 1234**
+#### **Example: Block `read()` System Call for Process 1234**
 ```sh
-sudo ./khaos __arm64_sys_write 5 1234
+sudo ./khaos read 5 1234
 ```
-- Hooks into `write()` (`__arm64_sys_write`).
+- Hooks into `read()` (`__arm64_sys_write`).
 - Injects error `-5` (`EIO`, Input/Output error).
-- Affects process **1234**—any `write()` calls from this process will fail.
+- Affects process **1234**—any `read()` calls from this process will fail.
 
-#### **Example: Prevent a Process from Forking**
-```sh
-sudo ./khaos __arm64_sys_fork 1 5678
-```
-- Hooks into `fork()` (`__arm64_sys_fork`).
-- Injects error `-1` (`EPERM`, Operation Not Permitted).
-- Prevents process **5678** from creating child processes.
-
----
-
-Here are the **system configuration steps** you had to modify in order to run your program. You can add these to your README under a **"System Requirements & Setup"** section.
-
----
+You can run the demo program `python3 read_demo.py` and test with it's PID.
 
 ## **System Requirements & Setup**
 Before running `khaos`, ensure your system is properly configured to allow BPF programs to execute.
