@@ -18,6 +18,7 @@ def read_file_continuously():
             f.seek(0)
             content = f.read()
             print(f"Time: {datetime.datetime.now()} Read {len(content)} bytes from file.")
+            print(f"Content: {content}")
             time.sleep(1)  # Simulate some delay between reads
 
 if __name__ == "__main__":
