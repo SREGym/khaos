@@ -12,8 +12,7 @@ struct fault_entry {
 
 static struct fault_entry fault_map[] = {
     {"read_corruption", "faults/read_corruption.bpf.o"},
-    {"read_error", "faults/read_error.bpf.o"},
-    {"fsync_delay", "faults/fsync_delay.bpf.o"},
+    {"read_error", "faults/read_error.bpf.o"}
 };
 
 #define NUM_FAULTS (sizeof(fault_map) / sizeof(fault_map[0]))
