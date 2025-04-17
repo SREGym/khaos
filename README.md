@@ -16,9 +16,15 @@ You will get a `khaos` binary file.
 ---
 
 ### **Usage**
-```sh
-sudo ./khaos <syscall_name> <error_code> <pid> [<pid> ...]
+Usage
+```bash
+sudo ./khaos <fault_type> <pid>
 ```
+You may also recover a fault:
+```bash
+sudo ./khaos --recover <fault_type>
+```
+
 
 #### **Example: Block `read()` System Call for Process 1234**
 ```sh
