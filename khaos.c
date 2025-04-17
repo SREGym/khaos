@@ -11,9 +11,19 @@ struct fault_entry {
 };
 
 static struct fault_entry fault_map[] = {
-    {"read_corruption", "faults/read_corruption.bpf.o"},
-    {"read_error", "faults/read_error.bpf.o"}
+    {"read_error", "faults/read_error.bpf.o"},
+    {"fsync_error", "faults/fsync_error.bpf.o"},
+    {"write_error", "faults/write_error.bpf.o"},
+    {"mmap_oom", "faults/mmap_oom.bpf.o"},
+    {"open_error", "faults/open_error.bpf.o"},
+    {"socket_error", "faults/socket_error.bpf.o"},
+    {"connect_error", "faults/connect_error.bpf.o"},
+    {"nanosleep_throttle", "faults/nanosleep_throttle.bpf.o"},
+    {"ioctl_fail", "faults/ioctl_fail.bpf.o"},
+    {"dup_fd_limit", "faults/dup_fd_limit.bpf.o"},
+    {"getaddrinfo_fail", "faults/getaddrinfo_fail.bpf.o"},
 };
+
 
 #define NUM_FAULTS (sizeof(fault_map) / sizeof(fault_map[0]))
 
