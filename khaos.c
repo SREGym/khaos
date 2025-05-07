@@ -15,14 +15,26 @@ static struct fault_entry fault_map[] = {
     {"fsync_error", "faults/fsync_error.bpf.o"},
     {"write_error", "faults/write_error.bpf.o"},
     {"mmap_oom", "faults/mmap_oom.bpf.o"},
+    {"mmap_fail", "faults/mmap_fail.bpf.o"},
     {"open_error", "faults/open_error.bpf.o"},
-    {"socket_error", "faults/socket_error.bpf.o"},
-    {"connect_error", "faults/connect_error.bpf.o"},
-    {"nanosleep_throttle", "faults/nanosleep_throttle.bpf.o"},
+    {"close_fail", "faults/close_fail.bpf.o"},
+    {"dup_fail", "faults/dup_fail.bpf.o"},
+    {"socket_block", "faults/socket_block.bpf.o"},
     {"ioctl_fail", "faults/ioctl_fail.bpf.o"},
-    {"dup_fd_limit", "faults/dup_fd_limit.bpf.o"},
+    {"nanosleep_throttle", "faults/nanosleep_throttle.bpf.o"},
+    {"nanosleep_interrupt", "faults/nanosleep_interrupt.bpf.o"},
+    {"fork_fail", "faults/fork_fail.bpf.o"},
+    {"clock_drift", "faults/clock_drift.bpf.o"},
+    {"brk_fail", "faults/brk_fail.bpf.o"},
+    {"mlock_fail", "faults/mlock_fail.bpf.o"},
+    {"gettimeofday_fail", "faults/gettimeofday_fail.bpf.o"},
+    {"getrandom_fail", "faults/getrandom_fail.bpf.o"},
+    {"setns_fail", "faults/setns_fail.bpf.o"},
+    {"prlimit_fail", "faults/prlimit_fail.bpf.o"},
     {"getaddrinfo_fail", "faults/getaddrinfo_fail.bpf.o"},
+    {"cuda_malloc_fail", "faults/cuda_malloc_fail.bpf.o"},
 };
+
 
 
 #define NUM_FAULTS (sizeof(fault_map) / sizeof(fault_map[0]))
