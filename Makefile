@@ -15,22 +15,20 @@ else ifeq ($(ARCH), arm)
     HOST_CC = aarch64-linux-gnu-gcc
 endif
 
-FAULTS_DIR = faults
-FAULT_PROGS = $(wildcard $(FAULTS_DIR)/*.bpf.c)
-FAULT_BPF_OBJS = $(FAULT_PROGS:.bpf.c=.bpf.o)
-FAULT_SKELS = $(FAULT_BPF_OBJS:.bpf.o=.skel.h)
+KHAOS_BPF_OBJ = khaos.bpf.o
+KHAOS_SKEL = khaos.skel.h
 
-all: khaos $(FAULT_BPF_OBJS)
+all: khaos $(KHAOS_BPF_OBJ)
 
-$(FAULTS_DIR)/%.bpf.o: $(FAULTS_DIR)/%.bpf.c
+$(KHAOS_BPF_OBJ): khaos.bpf.c
 	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
 	$(BPF_STRIP) $@
 
-$(FAULTS_DIR)/%.skel.h: $(FAULTS_DIR)/%.bpf.o
+$(KHAOS_SKEL): $(KHAOS_BPF_OBJ)
 	bpftool gen skeleton $< > $@
 
-khaos: khaos.c $(FAULT_SKELS)
+khaos: khaos.c $(KHAOS_SKEL)
 	$(HOST_CC) -std=c11 -Wall -O2 $(CFLAGS) khaos.c -o $@ $(LDFLAGS) -static -lbpf -lelf -lz -lzstd
 
 clean:
-	rm -rf ebpf khaos *.o *.skel.h $(FAULTS_DIR)/*.o $(FAULTS_DIR)/*.skel.h
+	rm -f khaos *.o *.skel.h
