@@ -106,3 +106,95 @@ sudo ./khaos <syscall_name> <error_code> <pid>
 If you're running Ubuntu like I am, you might have to [disable AppArmor](https://documentation.ubuntu.com/server/how-to/security/apparmor/index.html) for the program to work.
 
 ---
+
+## How to add a new fault
+The first step to adding a new fault is to identify the syscall we want to inject a fault on. You can find relevant syscalls by using the `strace` tool to see the syscalls used by a particular program:
+
+Here’s a polished and expanded version of your `README.md` section on adding new faults, including examples and detailed steps:
+
+---
+
+## 🔧 How to Add a New Fault
+
+Adding a new fault to **Khaos** involves identifying the target syscall, choosing the appropriate error code, and registering the fault in the Khaos fault registry. Here's a step-by-step guide:
+
+---
+
+### 1️Identify the Target Syscall
+
+To determine which syscall a program is using (and might fail on), use [`strace`](https://man7.org/linux/man-pages/man1/strace.1.html) to trace its system calls.
+
+#### Example: Using `strace`
+
+If you have a Python script `read_demo.py` that reads a file:
+
+```bash
+strace -e trace=read,open,write -p <PID>
+```
+
+Or, to launch the program with tracing from the start:
+
+```bash
+strace -e trace=all python3 read_demo.py
+```
+
+You will see output like:
+
+```
+openat(AT_FDCWD, "test_file.txt", O_RDONLY) = 3
+read(3, "Hello world\n", 1024)             = 12
+```
+
+This tells you the program uses the `openat` and `read` syscalls — candidates for fault injection.
+
+---
+
+### Look Up Syscall Error Codes
+
+Once you identify the syscall, consult its manual page to learn what error codes it may return.
+
+Run:
+
+```bash
+man 2 read
+```
+
+Look for the `ERRORS` section. Example for `read(2)`:
+
+```
+EAGAIN      The file descriptor refers to a file other than a socket and has been marked nonblocking...
+EIO         A low-level I/O error occurred while reading from the disk.
+EBADF       fd is not a valid file descriptor or is not open for reading.
+```
+
+Pick an error code that meaningfully simulates a hardware-related fault. For example:
+
+* `EIO (-5)` simulates a disk read failure
+* `ENOSPC (-28)` simulates a full disk
+* `ENOMEM (-12)` simulates memory exhaustion
+
+---
+
+### Register the New Fault
+
+Open `khaos.c` and locate the `fault_registry[]` struct:
+
+```c
+static struct fault_entry fault_registry[] = {
+    {"read_error", "read", -5},       // Injects EIO
+    {"write_error", "write", -28},    // Injects ENOSPC
+    ...
+};
+```
+
+Add a new line for your fault:
+
+```c
+{"open_error", "openat", -13},   // Injects EACCES
+```
+
+Make sure:
+
+* The name is unique (e.g., `open_error`)
+* The syscall name matches exactly what’s used in the kernel (`strace` output will guide this)
+* The error code is **negative**
