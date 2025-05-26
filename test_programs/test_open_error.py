@@ -1,6 +1,5 @@
 import os
 import time
-import errno
 
 print("Test: open_error (PID: " + str(os.getpid()) + ")")
 

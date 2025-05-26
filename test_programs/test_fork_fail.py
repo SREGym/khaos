@@ -1,6 +1,5 @@
 import os
 import time
-import errno
 import ctypes
 
 libc = ctypes.CDLL("libc.so.6")

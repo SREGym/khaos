@@ -1,7 +1,5 @@
 import os
 import time
-import errno
-
 print("Test: fsync_error (PID: " + str(os.getpid()) + ")")
 
 while True:

@@ -1,6 +1,5 @@
 import os
 import time
-import errno
 
 print("Test: socket_block (PID: " + str(os.getpid()) + ")")
 

@@ -1,6 +1,5 @@
 import os
 import time
-import errno
 
 print("Test: close_fail (PID: " + str(os.getpid()) + ")")
 
