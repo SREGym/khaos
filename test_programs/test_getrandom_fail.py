@@ -6,8 +6,7 @@ print("Test: getrandom_fail (PID: " + str(os.getpid()) + ")")
 
 while True:
     try:
-        with open('/dev/random', 'rb') as f:
-            f.read(1)
+        os.getrandom(1, 0)
     except Exception as e:
         print(f"[getrandom_fail] Exception:", e)
     time.sleep(1)

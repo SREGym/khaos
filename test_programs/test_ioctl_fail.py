@@ -7,8 +7,9 @@ print("Test: ioctl_fail (PID: " + str(os.getpid()) + ")")
 while True:
     try:
         import fcntl
-            with open('/dev/null', 'rb') as f:
-                fcntl.ioctl(f, 0x1234, 'data')
+
+        with open("/dev/null", "rb") as f:
+            fcntl.ioctl(f, 0x5451)
     except Exception as e:
         print(f"[ioctl_fail] Exception:", e)
     time.sleep(1)
