@@ -27,7 +27,7 @@ static struct fault_entry fault_registry[] = {
     {"gettimeofday_fail",   "gettimeofday",   -1},
     {"ioctl_fail",          "ioctl",         -25},
     {"cuda_malloc_fail",    "ioctl",         -12},
-    {"getaddrinfo_fail",    "getaddrinfo",    -2},
+    {"getaddrinfo_fail",    "recvfrom",    -1},
     {"nanosleep_throttle",  "nanosleep",      -5},
     {"nanosleep_interrupt", "nanosleep",      -4},
     {"fork_fail",           "fork",          -11},
