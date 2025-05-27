@@ -1,22 +1,5 @@
-### **Building**
-To build both static libbpf.a and shared libbpf.so:
-```bash
-pushd libbpf/src
-make
-```
-
-Then compile khaos:
-```bash
-popd
-make #ARCH=arm for arm compilation, default is x86
-```
-
-You will get a `khaos` binary file.
-
----
-
 ### **Usage**
-Usage
+
 ```bash
 sudo ./khaos <fault_type> <pid>
 ```
@@ -35,6 +18,8 @@ sudo ./khaos read 5 1234
 - Affects process **1234**—any `read()` calls from this process will fail.
 
 You can run the demo program `python3 read_demo.py` and test with it's PID.
+
+---
 
 ## **System Requirements & Setup**
 Before running `khaos`, ensure your system is properly configured to allow BPF programs to execute.
@@ -96,15 +81,69 @@ If you're on **ARM64**, make sure the correct headers are linked:
 sudo ln -s /usr/src/linux-headers-$(uname -r)/arch/arm64/include/generated/uapi/asm /usr/include/asm
 ```
 
-### **6. Run the Program as Root**
+### **6. Cloning And Building Khaos On Your Machine**
+
+Prompt the following command into your shell to clone the repository and its submodules:
+
+```sh
+git clone https://github.com/xlab-uiuc/khaos.git
+cd khaos
+git submodule update --init --recursive
+```
+
+To build both static libbpf.a and shared libbpf.so:
+```bash
+pushd libbpf/src
+sudo make install
+```
+
+Then compile khaos:
+Problems with aarch64 and arm64 architecture? Try **the guide** below then ```make ARCH=arm``` command again
+
+```bash
+popd
+make #ARCH=arm for arm compilation, default is x86
+```
+You will get a `khaos` binary file.
+
+
+### For Ubuntu User: Disable AppArmor
+If you're running Ubuntu like I am, you might have to [disable AppArmor](https://documentation.ubuntu.com/server/how-to/security/apparmor/index.html) for the program to work.
+
+
+### For ARM-64: Kernel Headers And Symlinks Problems
+If you're into problems using ```make ARCH=arm``` with one of the following errors:
+
+```bash
+
+In file included from khaos.bpf.c:1:
+In file included from /usr/include/linux/bpf.h:11:
+In file included from /usr/include/linux/types.h:5:
+In file included from /usr/include/asm/types.h:1:
+In file included from /usr/include/asm-generic/types.h:7:
+/usr/include/asm-generic/int-ll64.h:12:10: fatal error: 'asm/bitsperlong.h' file not found
+   12 | #include <asm/bitsperlong.h>
+      |          ^~~~~~~~~~~~~~~~~~~
+
+1 error generated.
+make: *** [Makefile:24: khaos.bpf.o] Error 1 
+```
+
+You might want to run the sh script below to resolve the problem:
+
+```bash
+
+sudo apt update
+sudo apt install linux-headers-$(uname -r) libc6-dev build-essential
+chmod +x setup_arm64_headers.sh
+./setup_arm64_headers.sh
+```
+
+### **7. Run the Program as Root**
 Most BPF operations require **root privileges**. Always run `khaos` with `sudo`:
 ```sh
 sudo ./khaos <syscall_name> <error_code> <pid>
 ```
-
-### **7. Disable AppArmor**
-If you're running Ubuntu like I am, you might have to [disable AppArmor](https://documentation.ubuntu.com/server/how-to/security/apparmor/index.html) for the program to work.
-
 ---
 
 ## How to add a new fault
