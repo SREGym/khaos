@@ -106,6 +106,8 @@ make #ARCH=arm for arm compilation, default is x86
 ```
 You will get a `khaos` binary file.
 
+### For Windows User: WSL2 Disclaimer
+WSL2 does not support eBPF by default, you will have to compile a custom kernel if you intend to continue using it. 
 
 ### For Ubuntu User: Disable AppArmor
 If you're running Ubuntu like I am, you might have to [disable AppArmor](https://documentation.ubuntu.com/server/how-to/security/apparmor/index.html) for the program to work.
