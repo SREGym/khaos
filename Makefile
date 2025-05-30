@@ -19,6 +19,10 @@ endif
 # KHAOS_BPF_OBJ = khaos.bpf.o
 # KHAOS_SKEL = khaos.skel.h
 
+# New file output for kprobe
+KPROBE_BPF_OBJ = kprobe.bpf.c
+KPROBE_SKEL = kprobe.skel.h
+
 all: khaos $(KHAOS_BPF_OBJ)
 
 $(KHAOS_BPF_OBJ): khaos.bpf.c
