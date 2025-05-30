@@ -37,6 +37,15 @@ all: khaos $(ALL_BPF_OBJS)
 # $(KHAOS_SKEL): $(KHAOS_BPF_OBJ)
 # 	bpftool gen skeleton $< > $@
 
+# RULES FOR SETTING UP KPROBE OBJ AND SKEL
+$(KPROBE_BPF_OBJ): kprobe.bpf.c
+	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
+	$(BPF_STRIP) $@
+
+$(KPROBE_SKEL): $(KPROBE_BPF_OBJ)
+	bpftool gen skeleton $< > $@
+
+
 khaos: khaos.c $(KHAOS_SKEL)
 	$(HOST_CC) -std=c11 -Wall -O2 $(CFLAGS) khaos.c -o $@ $(LDFLAGS) -static -lbpf -lelf -lz -lzstd
 
