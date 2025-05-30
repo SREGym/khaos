@@ -4,7 +4,12 @@
 #include <unistd.h>
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
-#include "khaos.skel.h"
+
+/* // MARKED: Change the khaos skel to kprobe skel later */
+/* #include "khaos.skel.h" */
+
+// Include new skel created for kprobe
+#include "kprobe.skel.h"
 
 struct fault_entry {
     const char *name;
