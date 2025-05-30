@@ -23,6 +23,10 @@ endif
 KPROBE_BPF_OBJ = kprobe.bpf.c
 KPROBE_SKEL = kprobe.skel.h
 
+# Added placeholders for all KPROBE's and KRETPROBE's SKEL and OBJ
+ALL_BPF_OBJS = $(KPROBE_BPF_OBJ)
+ALL_SKELS = $(KPROBE_SKEL)
+
 all: khaos $(KHAOS_BPF_OBJ)
 
 $(KHAOS_BPF_OBJ): khaos.bpf.c
