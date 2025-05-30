@@ -46,7 +46,7 @@ $(KPROBE_SKEL): $(KPROBE_BPF_OBJ)
 	bpftool gen skeleton $< > $@
 
 
-khaos: khaos.c $(KHAOS_SKEL)
+khaos: khaos.c $(ALL_SKELS)
 	$(HOST_CC) -std=c11 -Wall -O2 $(CFLAGS) khaos.c -o $@ $(LDFLAGS) -static -lbpf -lelf -lz -lzstd
 
 clean:
