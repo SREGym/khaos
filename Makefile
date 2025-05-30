@@ -27,14 +27,15 @@ KPROBE_SKEL = kprobe.skel.h
 ALL_BPF_OBJS = $(KPROBE_BPF_OBJ)
 ALL_SKELS = $(KPROBE_SKEL)
 
-all: khaos $(KHAOS_BPF_OBJ)
+all: khaos $(ALL_BPF_OBJS)
 
-$(KHAOS_BPF_OBJ): khaos.bpf.c
-	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
-	$(BPF_STRIP) $@
-
-$(KHAOS_SKEL): $(KHAOS_BPF_OBJ)
-	bpftool gen skeleton $< > $@
+# # MARKED: TO BE REPLACED BY SEPARATE KPROBE AND KRETPROBE RULES
+# $(KHAOS_BPF_OBJ): khaos.bpf.c
+# 	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
+# 	$(BPF_STRIP) $@
+#
+# $(KHAOS_SKEL): $(KHAOS_BPF_OBJ)
+# 	bpftool gen skeleton $< > $@
 
 khaos: khaos.c $(KHAOS_SKEL)
 	$(HOST_CC) -std=c11 -Wall -O2 $(CFLAGS) khaos.c -o $@ $(LDFLAGS) -static -lbpf -lelf -lz -lzstd
