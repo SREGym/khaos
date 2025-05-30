@@ -5,10 +5,10 @@
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 
-/* // MARKED: Change the khaos skel to kprobe skel later */
+/* // TODO: Remove later after including skel of kprobe and kretprobe */
 /* #include "khaos.skel.h" */
 
-// Include new skel created for kprobe
+// Include skeletons in main khaos.c 
 #include "kprobe.skel.h"
 
 struct fault_entry {
