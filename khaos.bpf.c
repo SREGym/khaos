@@ -19,6 +19,7 @@ struct {
 	__uint(max_entries, 256);
 } pid_map SEC(".maps");
 
+// NAME CHANGE FOR KHAOS (TOO IRRELEVANT) -> Kprobe Handler?
 SEC("kprobe/")
 int khaos(struct pt_regs *ctx)
 {
