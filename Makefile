@@ -15,8 +15,9 @@ else ifeq ($(ARCH), arm)
     HOST_CC = aarch64-linux-gnu-gcc
 endif
 
-KHAOS_BPF_OBJ = khaos.bpf.o
-KHAOS_SKEL = khaos.skel.h
+# # MARKED: TO BE EDITED + MARKED AS REMOVED LATER
+# KHAOS_BPF_OBJ = khaos.bpf.o
+# KHAOS_SKEL = khaos.skel.h
 
 all: khaos $(KHAOS_BPF_OBJ)
 
