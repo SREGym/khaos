@@ -1,3 +1,6 @@
+// FILE LEVEL REMOVAL
+// Marked for removal after kprobe separation
+
 #include <linux/bpf.h>
 #include <linux/ptrace.h>
 #include <bpf/bpf_helpers.h>
