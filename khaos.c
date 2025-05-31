@@ -11,13 +11,30 @@
 // Include skeletons in main khaos.c 
 #include "kprobe.skel.h"
 
+
+// Define probe types
+enum probe_type {
+  PT_KPROBE,
+  PT_KRETPROBE
+};
+
 struct fault_entry {
     const char *name;
     const char *syscall;
-    int error_code;
+    /* NEWLY ADDED CODE FOR DIFFERENT FAULTS  */
+    enum probe_type type; 
+    union {
+      int kprobe_error_code;
+      long kretprobe_return_value;
+    } params;
+    /* END  */
+
+    /*  /* TODO: DELETE LATER AFTER SUCCESSFUL KROPE MIGEATION */ */
+    /* int error_code; */
 };
 
 static struct fault_entry fault_registry[] = {
+    // KPROBE FAULTS
     {"read_error",          "read",          -5},
     {"write_error",         "write",         -28},
     {"fsync_error",         "fsync",         -5},
@@ -32,7 +49,7 @@ static struct fault_entry fault_registry[] = {
     {"gettimeofday_fail",   "gettimeofday",   -1},
     {"ioctl_fail",          "ioctl",         -25},
     {"cuda_malloc_fail",    "ioctl",         -12},
-    {"getaddrinfo_fail",    "recvfrom",    -1},
+    {"getaddrinfo_fail",    "recvfrom",       -1},
     {"nanosleep_throttle",  "nanosleep",      -5},
     {"nanosleep_interrupt", "nanosleep",      -4},
     {"fork_fail",           "fork",          -11},
@@ -40,6 +57,7 @@ static struct fault_entry fault_registry[] = {
     {"setns_fail",          "setns",          -1},
     {"prlimit_fail",        "prlimit64",      -1},
     {"socket_block",        "socket",         -1},
+    // KRETPOBE FAULTS
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
