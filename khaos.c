@@ -102,38 +102,39 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     int pid = atoi(argv[2]);
-
-    struct khaos_bpf *obj = khaos_bpf__open_and_load();
-    if (!obj) {
-        fprintf(stderr, "ERROR: Failed to open/load BPF skeleton\n");
-        return 1;
-    }
-
-    int key = 0;
-    if (bpf_map__update_elem(obj->maps.err_map, &key, sizeof(key), &fault->error_code, sizeof(fault->error_code), 0)) {
-        fprintf(stderr, "ERROR: Failed to update err_map\n");
-        return 1;
-    }
-
-    unsigned char value = 1;
-    if (bpf_map__update_elem(obj->maps.pid_map, &pid, sizeof(pid), &value, sizeof(value), 0)) {
-        fprintf(stderr, "ERROR: Failed to update pid_map\n");
-        return 1;
-    }
-
-    LIBBPF_OPTS(bpf_ksyscall_opts, opts);
-    struct bpf_link *link = bpf_program__attach_ksyscall(obj->progs.khaos, fault->syscall, &opts);
-    if (libbpf_get_error(link)) {
-        fprintf(stderr, "ERROR: Failed to attach ksyscall to %s\n", fault->syscall);
-        return 1;
-    }
-
-    char buf[128];
-    snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-%s", fault->name);
-    bpf_link__pin(link, buf);
-    bpf_link__destroy(link);
-    khaos_bpf__destroy(obj);
-
-    printf("Injected fault '%s' (syscall: %s, errno: -%d) into PID %d\n", fault->name, fault->syscall, fault->error_code, pid);
-    return 0;
+    
+    /* // NOTE: Marked to be removed after successful migration */
+    /* struct khaos_bpf *obj = khaos_bpf__open_and_load(); */
+    /* if (!obj) { */
+    /*     fprintf(stderr, "ERROR: Failed to open/load BPF skeleton\n"); */
+    /*     return 1; */
+    /* } */
+    /**/
+    /* int key = 0; */
+    /* if (bpf_map__update_elem(obj->maps.err_map, &key, sizeof(key), &fault->error_code, sizeof(fault->error_code), 0)) { */
+    /*     fprintf(stderr, "ERROR: Failed to update err_map\n"); */
+    /*     return 1; */
+    /* } */
+    /**/
+    /* unsigned char value = 1; */
+    /* if (bpf_map__update_elem(obj->maps.pid_map, &pid, sizeof(pid), &value, sizeof(value), 0)) { */
+    /*     fprintf(stderr, "ERROR: Failed to update pid_map\n"); */
+    /*     return 1; */
+    /* } */
+    /**/
+    /* LIBBPF_OPTS(bpf_ksyscall_opts, opts); */
+    /* struct bpf_link *link = bpf_program__attach_ksyscall(obj->progs.khaos, fault->syscall, &opts); */
+    /* if (libbpf_get_error(link)) { */
+    /*     fprintf(stderr, "ERROR: Failed to attach ksyscall to %s\n", fault->syscall); */
+    /*     return 1; */
+    /* } */
+    /**/
+    /* char buf[128]; */
+    /* snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-%s", fault->name); */
+    /* bpf_link__pin(link, buf); */
+    /* bpf_link__destroy(link); */
+    /* khaos_bpf__destroy(obj); */
+    /**/
+    /* printf("Injected fault '%s' (syscall: %s, errno: -%d) into PID %d\n", fault->name, fault->syscall, fault->error_code, pid); */
+    /* return 0; */
 }
