@@ -20,7 +20,7 @@ endif
 # KHAOS_SKEL = khaos.skel.h
 
 # New file output for kprobe
-KPROBE_BPF_OBJ = kprobe.bpf.c
+KPROBE_BPF_OBJ = kprobe.bpf.o
 KPROBE_SKEL = kprobe.skel.h
 
 # Added placeholders for all KPROBE's and KRETPROBE's SKEL and OBJ

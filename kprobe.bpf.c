@@ -12,7 +12,7 @@ struct {
 struct {
   __uint(type, BPF_MAP_TYPE_HASH);
   __type(key, int);
-  __type(value, unsigned_char);
+  __type(value, unsigned char);
   __uint(max_entries, 256);
 } pid_map SEC(".maps");
 

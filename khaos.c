@@ -2,39 +2,31 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>      // For strerror
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 
-/* // TODO: Remove later after including skel of kprobe and kretprobe */
-/* #include "khaos.skel.h" */
-
-// Include skeletons in main khaos.c 
 #include "kprobe.skel.h"
-
+// #include "kretprobe.skel.h" 
 
 // Define probe types
 enum probe_type {
   PT_KPROBE,
-  PT_KRETPROBE
+  PT_KRETPROBE // Defined for future use
 };
 
 struct fault_entry {
     const char *name;
     const char *syscall;
-    /* NEWLY ADDED CODE FOR DIFFERENT FAULTS  */
     enum probe_type type; 
     union {
-      int kprobe_ERRN; // NOTE: Kprobe's Error Code
-      long kretprobe_RETV; // NOTE: Kretprobe's Return Value
+      int kprobe_ERRN; 
+      long kretprobe_RETV;
     } params;
-    /* END  */
-
-    /*  /* TODO: DELETE LATER AFTER SUCCESSFUL KROPE MIGEATION */ */
-    /* int error_code; */
 };
 
+// Fault registry should only contain PT_KPROBE entries for now
 static struct fault_entry fault_registry[] = {
-    // KPROBE FAULTS
     {"read_error",          "read",          PT_KPROBE, .params.kprobe_ERRN=-5},
     {"write_error",         "write",         PT_KPROBE, .params.kprobe_ERRN=-28},
     {"fsync_error",         "fsync",         PT_KPROBE, .params.kprobe_ERRN=-5},
@@ -57,13 +49,13 @@ static struct fault_entry fault_registry[] = {
     {"setns_fail",          "setns",         PT_KPROBE, .params.kprobe_ERRN=-1},
     {"prlimit_fail",        "prlimit64",     PT_KPROBE, .params.kprobe_ERRN=-1},
     {"socket_block",        "socket",        PT_KPROBE, .params.kprobe_ERRN=-1},
-    // KRETPOBE FAULTS
+    // NO KRETPROBE FAULTS DEFINED YET
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
 
 const struct fault_entry* find_fault(const char *name) {
-    for (int i = 0; i < NUM_FAULTS; ++i) {
+    for (int i = 0; i < NUM_FAULTS; ++i) { 
         if (strcmp(name, fault_registry[i].name) == 0)
             return &fault_registry[i];
     }
@@ -71,13 +63,19 @@ const struct fault_entry* find_fault(const char *name) {
 }
 
 void recover_fault(const char *fault_name) {
-    char buf[128];
-    snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-%s", fault_name);
+    // Increase the buf to match main's spec
+    char buf[256]; 
+    snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-%s", fault_name);
     if (unlink(buf) == 0)
         printf("Successfully removed pinned BPF link: %s\n", buf);
-    else
-        perror("Failed to remove pinned BPF link");
-    // NOTE: Optional: We could open maps and clear them here
+    else {
+        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-%s", fault_name);
+        if (unlink(buf) == 0) {
+            printf("Successfully removed (old path) pinned BPF link: %s\n", buf);
+        } else {
+            fprintf(stderr, "Failed to remove pinned BPF link (tried kprobe path and old path): %s\n", strerror(errno));
+        }
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -92,6 +90,10 @@ int main(int argc, char *argv[]) {
     }
 
     if (strcmp(argv[1], "--recover") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Usage: %s --recover <fault_name>\n", argv[0]);
+            return 1;
+        }
         recover_fault(argv[2]);
         return 0;
     }
@@ -102,39 +104,75 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     int pid = atoi(argv[2]);
+
+    struct bpf_link *link = NULL; 
+    char buf[256]; 
+    int key = 0;  
+    unsigned char value = 1;
     
-    /* // NOTE: Marked to be removed after successful migration */
-    /* struct khaos_bpf *obj = khaos_bpf__open_and_load(); */
-    /* if (!obj) { */
-    /*     fprintf(stderr, "ERROR: Failed to open/load BPF skeleton\n"); */
-    /*     return 1; */
-    /* } */
-    /**/
-    /* int key = 0; */
-    /* if (bpf_map__update_elem(obj->maps.err_map, &key, sizeof(key), &fault->error_code, sizeof(fault->error_code), 0)) { */
-    /*     fprintf(stderr, "ERROR: Failed to update err_map\n"); */
-    /*     return 1; */
-    /* } */
-    /**/
-    /* unsigned char value = 1; */
-    /* if (bpf_map__update_elem(obj->maps.pid_map, &pid, sizeof(pid), &value, sizeof(value), 0)) { */
-    /*     fprintf(stderr, "ERROR: Failed to update pid_map\n"); */
-    /*     return 1; */
-    /* } */
-    /**/
-    /* LIBBPF_OPTS(bpf_ksyscall_opts, opts); */
-    /* struct bpf_link *link = bpf_program__attach_ksyscall(obj->progs.khaos, fault->syscall, &opts); */
-    /* if (libbpf_get_error(link)) { */
-    /*     fprintf(stderr, "ERROR: Failed to attach ksyscall to %s\n", fault->syscall); */
-    /*     return 1; */
-    /* } */
-    /**/
-    /* char buf[128]; */
-    /* snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-%s", fault->name); */
-    /* bpf_link__pin(link, buf); */
-    /* bpf_link__destroy(link); */
-    /* khaos_bpf__destroy(obj); */
-    /**/
-    /* printf("Injected fault '%s' (syscall: %s, errno: -%d) into PID %d\n", fault->name, fault->syscall, fault->error_code, pid); */
-    /* return 0; */
+    if (fault->type == PT_KPROBE) {
+        struct kprobe_bpf *obj = kprobe_bpf__open_and_load(); 
+
+        // a NULL kprobe object case
+        if (!obj) { 
+            fprintf(stderr, "ERROR: Failed to open/load kprobe BPF skeleton: %s\n", strerror(errno));
+            return 1; 
+        }
+        
+        if (bpf_map__update_elem(obj->maps.err_map, 
+                                &key, 
+                                sizeof(key), 
+                                &fault->params.kprobe_ERRN, 
+                                sizeof(fault->params.kprobe_ERRN), 
+                                BPF_ANY) != 0) 
+        {
+            fprintf(stderr, "ERROR: Failed to update kprobe err_map: %s\n", strerror(errno));   
+            kprobe_bpf__destroy(obj); 
+            return 1;
+        }
+
+        if (bpf_map__update_elem(obj->maps.pid_map,
+                                &pid,
+                                sizeof(pid),
+                                &value,
+                                sizeof(value),
+                                BPF_ANY) != 0) 
+        {
+            fprintf(stderr, "ERROR: Failed to update kprobe pid_map: %s\n", strerror(errno));   
+            kprobe_bpf__destroy(obj); 
+            return 1;
+        }
+        
+        LIBBPF_OPTS(bpf_kprobe_opts, opts); 
+        link = bpf_program__attach_kprobe_opts(obj->progs.kprobe_handler, fault->syscall, &opts);
+
+
+        if (libbpf_get_error(link)) { 
+            fprintf(stderr, "ERROR: Failed to attach kprobe to %s: %s\n", fault->syscall, strerror(errno));
+            kprobe_bpf__destroy(obj); 
+            return 1;
+        }
+
+        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-%s-pid%d", fault->name, pid); 
+        if (bpf_link__pin(link, buf) != 0) {
+            fprintf(stderr, "WARN: Failed to pin kprobe link for %s (PID %d): %s\n", fault->name, pid, strerror(errno));
+        } else {
+            printf("Pinned kprobe link to %s\n", buf);
+        }
+        
+        bpf_link__destroy(link); 
+        kprobe_bpf__destroy(obj); 
+        
+        printf("Injected kprobe fault '%s' (syscall: %s, errno: %d) into PID %d\n", 
+               fault->name, fault->syscall, fault->params.kprobe_ERRN, pid);
+
+    } else if (fault->type == PT_KRETPROBE) {
+        fprintf(stderr, "ERROR: Kretprobe fault type for '%s' is defined but not yet implemented.\n", fault->name);
+        return 1;
+    } else {
+        fprintf(stderr, "ERROR: Unknown fault->type defined in registry for fault: %s\n", fault->name);
+        return 1;
+    }
+    
+    return 0;
 }
