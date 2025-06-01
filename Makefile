@@ -15,9 +15,6 @@ else ifeq ($(ARCH), arm)
     HOST_CC = aarch64-linux-gnu-gcc
 endif
 
-# # MARKED: TO BE EDITED + MARKED AS REMOVED LATER
-# KHAOS_BPF_OBJ = khaos.bpf.o
-# KHAOS_SKEL = khaos.skel.h
 
 # New file output for kprobe
 KPROBE_BPF_OBJ = kprobe.bpf.o
@@ -29,13 +26,6 @@ ALL_SKELS = $(KPROBE_SKEL)
 
 all: khaos $(ALL_BPF_OBJS)
 
-# # MARKED: TO BE REPLACED BY SEPARATE KPROBE AND KRETPROBE RULES
-# $(KHAOS_BPF_OBJ): khaos.bpf.c
-# 	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
-# 	$(BPF_STRIP) $@
-#
-# $(KHAOS_SKEL): $(KHAOS_BPF_OBJ)
-# 	bpftool gen skeleton $< > $@
 
 # RULES FOR SETTING UP KPROBE OBJ AND SKEL
 $(KPROBE_BPF_OBJ): kprobe.bpf.c
