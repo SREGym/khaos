@@ -7,12 +7,11 @@
 #include <bpf/libbpf.h>
 
 #include "kprobe.skel.h"
-// #include "kretprobe.skel.h" 
+// #include "kretprobe.skel.h" //
 
-// Define probe types
 enum probe_type {
   PT_KPROBE,
-  PT_KRETPROBE // Defined for future use
+  PT_KRETPROBE 
 };
 
 struct fault_entry {
@@ -25,7 +24,6 @@ struct fault_entry {
     } params;
 };
 
-// Fault registry should only contain PT_KPROBE entries for now
 static struct fault_entry fault_registry[] = {
     {"read_error",          "read",          PT_KPROBE, .params.kprobe_ERRN=-5},
     {"write_error",         "write",         PT_KPROBE, .params.kprobe_ERRN=-28},
@@ -49,13 +47,12 @@ static struct fault_entry fault_registry[] = {
     {"setns_fail",          "setns",         PT_KPROBE, .params.kprobe_ERRN=-1},
     {"prlimit_fail",        "prlimit64",     PT_KPROBE, .params.kprobe_ERRN=-1},
     {"socket_block",        "socket",        PT_KPROBE, .params.kprobe_ERRN=-1},
-    // NO KRETPROBE FAULTS DEFINED YET
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
 
 const struct fault_entry* find_fault(const char *name) {
-    for (int i = 0; i < NUM_FAULTS; ++i) { 
+    for (size_t i = 0; i < NUM_FAULTS; ++i) { 
         if (strcmp(name, fault_registry[i].name) == 0)
             return &fault_registry[i];
     }
@@ -63,19 +60,15 @@ const struct fault_entry* find_fault(const char *name) {
 }
 
 void recover_fault(const char *fault_name) {
-    // Increase the buf to match main's spec
     char buf[256]; 
     snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-%s", fault_name);
-    if (unlink(buf) == 0)
+    /* snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-%s", fault_name); */
+    if (unlink(buf) == 0) {
         printf("Successfully removed pinned BPF link: %s\n", buf);
-    else {
-        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-%s", fault_name);
-        if (unlink(buf) == 0) {
-            printf("Successfully removed (old path) pinned BPF link: %s\n", buf);
-        } else {
-            fprintf(stderr, "Failed to remove pinned BPF link (tried kprobe path and old path): %s\n", strerror(errno));
-        }
+        return; 
     }
+    
+    fprintf(stderr, "Failed to remove pinned BPF link.\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -113,7 +106,6 @@ int main(int argc, char *argv[]) {
     if (fault->type == PT_KPROBE) {
         struct kprobe_bpf *obj = kprobe_bpf__open_and_load(); 
 
-        // a NULL kprobe object case
         if (!obj) { 
             fprintf(stderr, "ERROR: Failed to open/load kprobe BPF skeleton: %s\n", strerror(errno));
             return 1; 
@@ -130,7 +122,6 @@ int main(int argc, char *argv[]) {
             kprobe_bpf__destroy(obj); 
             return 1;
         }
-
         if (bpf_map__update_elem(obj->maps.pid_map,
                                 &pid,
                                 sizeof(pid),
@@ -143,19 +134,18 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         
-        LIBBPF_OPTS(bpf_kprobe_opts, opts); 
-        link = bpf_program__attach_kprobe_opts(obj->progs.kprobe_handler, fault->syscall, &opts);
-
+        LIBBPF_OPTS(bpf_ksyscall_opts, opts); 
+        link = bpf_program__attach_ksyscall(obj->progs.kprobe_handler, fault->syscall, &opts);
 
         if (libbpf_get_error(link)) { 
-            fprintf(stderr, "ERROR: Failed to attach kprobe to %s: %s\n", fault->syscall, strerror(errno));
+            fprintf(stderr, "ERROR: Failed to attach kprobe (via ksyscall) to %s: %s\n", fault->syscall, strerror(errno));
             kprobe_bpf__destroy(obj); 
             return 1;
         }
 
-        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-%s-pid%d", fault->name, pid); 
+        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-%s", fault->name); 
         if (bpf_link__pin(link, buf) != 0) {
-            fprintf(stderr, "WARN: Failed to pin kprobe link for %s (PID %d): %s\n", fault->name, pid, strerror(errno));
+            fprintf(stderr, "WARN: Failed to pin kprobe link for %s: %s\n", fault->name, strerror(errno));
         } else {
             printf("Pinned kprobe link to %s\n", buf);
         }
