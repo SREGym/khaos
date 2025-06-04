@@ -18,17 +18,25 @@ endif
 
 # New file output for kprobe
 KPROBE_BPF_OBJ = kprobe.bpf.o
+KRETPROBE_BPF_OBJ = kretprobe.bpf.o
 KPROBE_SKEL = kprobe.skel.h
+KRETPROBE_SKEL = kretprobe.skel.h
 
 # Added placeholders for all KPROBE's and KRETPROBE's SKEL and OBJ
-ALL_BPF_OBJS = $(KPROBE_BPF_OBJ)
-ALL_SKELS = $(KPROBE_SKEL)
+ALL_BPF_OBJS = $(KPROBE_BPF_OBJ) $(KRETPROBE_BPF_OBJ)
+ALL_SKELS = $(KPROBE_SKEL) $(KRETPROBE_SKEL)
 
 all: khaos $(ALL_BPF_OBJS)
 
 
 # RULES FOR SETTING UP KPROBE OBJ AND SKEL
 $(KPROBE_BPF_OBJ): kprobe.bpf.c
+	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
+	$(BPF_STRIP) $@
+
+
+# RULES FOR SETTING UP KPROBE OBJ AND SKEL
+$(KRETPROBE_BPF_OBJ): kretprobe.bpf.c
 	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
 	$(BPF_STRIP) $@
 
