@@ -6,11 +6,15 @@
 #include <bpf/libbpf.h>
 #include "khaos.skel.h"
 
+// Maximum number of arguments
+#define MAX_ARG 3
+
 struct fault_entry {
     const char *name;
     const char *syscall;
     int error_code;
 };
+
 
 static struct fault_entry fault_registry[] = {
     {"read_error",          "read",          -5},
@@ -57,16 +61,30 @@ void recover_fault(const char *fault_name) {
     // NOTE: Optional: We could open maps and clear them here
 }
 
-int main(int argc, char *argv[]) {
+// Main arguments should be supplied through GET data
+int main( void ) {
+
+	// TODO: potentially add buffer lengths for safety
+	char *argv[MAX_ARG];
+
+	// Sanity check
     if (getuid() != 0) {
         fprintf(stderr, "ERROR: This program must be run as root (use 'sudo').\n");
         return 1;
     }
 
-    if (argc < 3) {
-        fprintf(stderr, "Usage: %s <fault_name> <pid> | --recover <fault_name>\n", argv[0]);
-        return 1;
-    }
+	// Get values from GET query
+	char *args = strtok(getenv("QUERY_STRING"), ",");
+
+	for (int i = 0; i < MAX_ARG; i++) {
+		if (!args) { 	// Missing arguments
+			// TODO: should error messages return in POSTs?
+			fprintf(stderr, "Usage: %s <fault_name> <pid> | --recover <fault_name>\n", argv[0]);
+			return 1;
+		}
+		argv[i] = args;
+		args = strtok(NULL, ",");
+	}
 
     if (strcmp(argv[1], "--recover") == 0) {
         recover_fault(argv[2]);
