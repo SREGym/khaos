@@ -25,6 +25,7 @@ struct fault_entry {
 };
 
 static struct fault_entry fault_registry[] = {
+    // Kprobe errors
     {"read_error",          "read",          PT_KPROBE, .params.kprobe_ERRN=-5},
     {"write_error",         "write",         PT_KPROBE, .params.kprobe_ERRN=-28},
     {"fsync_error",         "fsync",         PT_KPROBE, .params.kprobe_ERRN=-5},
@@ -47,6 +48,9 @@ static struct fault_entry fault_registry[] = {
     {"setns_fail",          "setns",         PT_KPROBE, .params.kprobe_ERRN=-1},
     {"prlimit_fail",        "prlimit64",     PT_KPROBE, .params.kprobe_ERRN=-1},
     {"socket_block",        "socket",        PT_KPROBE, .params.kprobe_ERRN=-1},
+    // Kretprobe errors
+    {"close_ret_error",     "close",         PT_KRETPROBE, .params.kprobe_ERRN=-1L},
+    {"read_ret_error",      "read",          PT_KRETPROBE, .params.kprobe_ERRN=0L},
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
