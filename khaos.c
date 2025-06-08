@@ -68,26 +68,21 @@ const struct fault_entry* find_fault(const char *name) {
 
 void recover_fault(const char *fault_name) {
     char buf[256]; 
-    int removed_kprobe = 0;
-    int removed_kretprobe = 0;
-    int err_kprobe = 0, err_kretprobe = 0, err_old = 0;
 
     snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-%s", fault_name);
     if (unlink(buf) == 0) {
         printf("Successfully removed pinned kprobe BPF link: %s\n", buf);
-        removed_kprobe = 1;
-    } else {
-        fprintf(stderr, "Failed to remove any pinned BPF links for fault: '%s', type: '%s'", fault_name, "kprobe");
-    }
-    
+        return;
+    }     
+
     // Try removing kretprobe pin path
     snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kretprobe-%s", fault_name);
     if (unlink(buf) == 0) {
         printf("Successfully removed pinned kretprobe BPF link: %s\n", buf);
-        removed_kretprobe = 1;
-    } else {
-      fprintf(stderr, "Failed to remove any pinned BPF links for fault: '%s', type: '%s'", fault_name, "kretprobe");
+        return;
     }
+
+    fprintf(stderr, "Failed to remove any pinned BPF links for fault: '%s'", fault_name);
 }
 
 int main(int argc, char *argv[]) {
