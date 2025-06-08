@@ -15,19 +15,38 @@ else ifeq ($(ARCH), arm)
     HOST_CC = aarch64-linux-gnu-gcc
 endif
 
-KHAOS_BPF_OBJ = khaos.bpf.o
-KHAOS_SKEL = khaos.skel.h
 
-all: khaos $(KHAOS_BPF_OBJ)
+# New file output for kprobe
+KPROBE_BPF_OBJ = kprobe.bpf.o
+KRETPROBE_BPF_OBJ = kretprobe.bpf.o
+KPROBE_SKEL = kprobe.skel.h
+KRETPROBE_SKEL = kretprobe.skel.h
 
-$(KHAOS_BPF_OBJ): khaos.bpf.c
+# Added placeholders for all KPROBE's and KRETPROBE's SKEL and OBJ
+ALL_BPF_OBJS = $(KPROBE_BPF_OBJ) $(KRETPROBE_BPF_OBJ)
+ALL_SKELS = $(KPROBE_SKEL) $(KRETPROBE_SKEL)
+
+all: khaos $(ALL_BPF_OBJS)
+
+
+# RULES FOR SETTING UP KPROBE OBJ AND SKEL
+$(KPROBE_BPF_OBJ): kprobe.bpf.c
 	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
 	$(BPF_STRIP) $@
 
-$(KHAOS_SKEL): $(KHAOS_BPF_OBJ)
+
+# RULES FOR SETTING UP KPROBE OBJ AND SKEL
+$(KRETPROBE_BPF_OBJ): kretprobe.bpf.c
+	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
+	$(BPF_STRIP) $@
+
+$(KPROBE_SKEL): $(KPROBE_BPF_OBJ)
 	bpftool gen skeleton $< > $@
 
-khaos: khaos.c $(KHAOS_SKEL)
+$(KRETPROBE_SKEL): $(KRETPROBE_BPF_OBJ)
+	bpftool gen skeleton $< > $@
+
+khaos: khaos.c $(ALL_SKELS)
 	$(HOST_CC) -std=c11 -Wall -O2 $(CFLAGS) khaos.c -o $@ $(LDFLAGS) -static -lbpf -lelf -lz -lzstd
 
 clean:
