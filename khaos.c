@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <sys/utsname.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -24,6 +25,32 @@ struct fault_entry {
       long kretprobe_RETV;
     } params;
 };
+
+const char* get_syscall_prefix() {
+    static char prefix[16] = {0}; // Static buffer to hold the prefix
+    struct utsname u;
+
+    if (prefix[0] != 0) {
+        return prefix;
+    }
+
+    // Get system information
+    if (uname(&u) < 0) {
+        perror("uname failed");
+        strcpy(prefix, "sys_"); // Fallback
+        return prefix;
+    }
+
+    if (strcmp(u.machine, "x86_64") == 0) {
+        strcpy(prefix, "__x64_sys_");
+    } else if (strcmp(u.machine, "aarch64") == 0) {
+        strcpy(prefix, "__arm64_sys_");
+    } else {
+        strcpy(prefix, "sys_");
+    }
+
+    return prefix;
+}
 
 static struct fault_entry fault_registry[] = {
     // KPROBE FAULTS
@@ -188,9 +215,12 @@ int main(int argc, char *argv[]) {
             kretprobe_bpf__destroy(obj_kretprobe);
             return 1;
         }
+        
+        char full_syscall_name[256];
+        snprintf(full_syscall_name, sizeof(full_syscall_name), "%s%s", get_syscall_prefix(), fault->syscall);
 
-        LIBBPF_OPTS(bpf_kprobe_opts, opts_kretprobe); // kretprobes typically use kprobe_opts struct
-        link = bpf_program__attach_kprobe_opts(obj_kretprobe->progs.kretprobe_handler, fault->syscall, &opts_kretprobe);
+        LIBBPF_OPTS(bpf_kprobe_opts, opts_kretprobe, .retprobe = true); // kretprobes typically use kprobe_opts struct
+        link = bpf_program__attach_kprobe_opts(obj_kretprobe->progs.kretprobe_handler, full_syscall_name, &opts_kretprobe);
 
         if (libbpf_get_error(link)) {
             fprintf(stderr, "ERROR: Failed to attach kretprobe to %s: %s\n", fault->syscall, strerror(errno));

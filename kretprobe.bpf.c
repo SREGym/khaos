@@ -10,7 +10,7 @@ struct  {
 } ret_val_map SEC(".maps");
 
 struct {
-  __uint(type, BPF_MAP_TYPE_ARRAY);
+  __uint(type, BPF_MAP_TYPE_HASH); // ensure the PID number not overflow
   __type(key, int);
   __type(value, unsigned char);
   __uint(max_entries, 256);
