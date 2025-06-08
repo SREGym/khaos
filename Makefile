@@ -43,6 +43,8 @@ $(KRETPROBE_BPF_OBJ): kretprobe.bpf.c
 $(KPROBE_SKEL): $(KPROBE_BPF_OBJ)
 	bpftool gen skeleton $< > $@
 
+$(KRETPROBE_SKEL): $(KRETPROBE_BPF_OBJ)
+	bpftool gen skeleton $< > $@
 
 khaos: khaos.c $(ALL_SKELS)
 	$(HOST_CC) -std=c11 -Wall -O2 $(CFLAGS) khaos.c -o $@ $(LDFLAGS) -static -lbpf -lelf -lz -lzstd
