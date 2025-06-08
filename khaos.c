@@ -171,6 +171,50 @@ int main(int argc, char *argv[]) {
                fault->name, fault->syscall, fault->params.kprobe_ERRN, pid);
 
     } else if (fault->type == PT_KRETPROBE) {
+        struct kretprobe_bpf *obj_kretprobe = kretprobe_bpf__open_and_load();
+        if (!obj_kretprobe) {
+            fprintf(stderr, "ERROR: Failed to open/load kretprobe BPF skeleton: %s\n", strerror(errno));
+            return 1;
+        }
+
+        if (bpf_map__update_elem(obj_kretprobe->maps.ret_val_map, 
+                                &key, sizeof(key),
+                                &fault->params.kretprobe_RETV, sizeof(fault->params.kretprobe_RETV),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update kretprobe ret_val_map: %s\n", strerror(errno));
+            kretprobe_bpf__destroy(obj_kretprobe);
+            return 1;
+        }
+        if (bpf_map__update_elem(obj_kretprobe->maps.pid_map,
+                                &pid, sizeof(pid),
+                                &value, sizeof(value),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update kretprobe pid_map: %s\n", strerror(errno));
+            kretprobe_bpf__destroy(obj_kretprobe);
+            return 1;
+        }
+
+        LIBBPF_OPTS(bpf_kprobe_opts, opts_kretprobe); // kretprobes typically use kprobe_opts struct
+        link = bpf_program__attach_kprobe_opts(obj_kretprobe->progs.kretprobe_handler, fault->syscall, &opts_kretprobe);
+
+        if (libbpf_get_error(link)) {
+            fprintf(stderr, "ERROR: Failed to attach kretprobe to %s: %s\n", fault->syscall, strerror(errno));
+            kretprobe_bpf__destroy(obj_kretprobe);
+            return 1;
+        }
+
+        snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kretprobe-%s", fault->name);
+        if (bpf_link__pin(link, pin_path_buf) != 0) {
+            fprintf(stderr, "WARN: Failed to pin kretprobe link for %s: %s\n", fault->name, strerror(errno));
+        } else {
+            printf("Pinned kretprobe link to %s\n", pin_path_buf);
+        }
+
+        bpf_link__destroy(link);
+        kretprobe_bpf__destroy(obj_kretprobe);
+
+        printf("Injected kretprobe fault '%s' (syscall: %s, forced_ret: %ld) into PID %d\n",
+               fault->name, fault->syscall, fault->params.kretprobe_RETV, pid);
     } else {
         fprintf(stderr, "ERROR: Unknown fault->type defined in registry for fault: %s\n", fault->name);
         return 1;
