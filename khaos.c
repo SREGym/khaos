@@ -26,31 +26,31 @@ struct fault_entry {
     } params;
 };
 
-const char* get_syscall_prefix() {
-    static char prefix[16] = {0}; // Static buffer to hold the prefix
-    struct utsname u;
-
-    if (prefix[0] != 0) {
-        return prefix;
-    }
-
-    // Get system information
-    if (uname(&u) < 0) {
-        perror("uname failed");
-        strcpy(prefix, "sys_"); // Fallback
-        return prefix;
-    }
-
-    if (strcmp(u.machine, "x86_64") == 0) {
-        strcpy(prefix, "__x64_sys_");
-    } else if (strcmp(u.machine, "aarch64") == 0) {
-        strcpy(prefix, "__arm64_sys_");
-    } else {
-        strcpy(prefix, "sys_");
-    }
-
-    return prefix;
-}
+/* const char* get_syscall_prefix() { */
+/*     static char prefix[16] = {0}; // Static buffer to hold the prefix */
+/*     struct utsname u; */
+/**/
+/*     if (prefix[0] != 0) { */
+/*         return prefix; */
+/*     } */
+/**/
+/*     // Get system information */
+/*     if (uname(&u) < 0) { */
+/*         perror("uname failed"); */
+/*         strcpy(prefix, "sys_"); // Fallback */
+/*         return prefix; */
+/*     } */
+/**/
+/*     if (strcmp(u.machine, "x86_64") == 0) { */
+/*         strcpy(prefix, "__x64_sys_"); */
+/*     } else if (strcmp(u.machine, "aarch64") == 0) { */
+/*         strcpy(prefix, "__arm64_sys_"); */
+/*     } else { */
+/*         strcpy(prefix, "sys_"); */
+/*     } */
+/**/
+/*     return prefix; */
+/* } */
 
 static struct fault_entry fault_registry[] = {
     // KPROBE FAULTS
@@ -60,10 +60,6 @@ static struct fault_entry fault_registry[] = {
     {"open_error",          "openat",        PT_KPROBE, .params.kprobe_ERRN=-13},
     {"close_fail",          "close",         PT_KPROBE, .params.kprobe_ERRN=-9},
     {"dup_fail",            "dup",           PT_KPROBE, .params.kprobe_ERRN=-24},
-    {"mmap_fail",           "mmap",          PT_KPROBE, .params.kprobe_ERRN=-12},
-    {"mmap_oom",            "mmap",          PT_KPROBE, .params.kprobe_ERRN=-12},
-    {"brk_fail",            "brk",           PT_KPROBE, .params.kprobe_ERRN=-12},
-    {"mlock_fail",          "mlock",         PT_KPROBE, .params.kprobe_ERRN=-12},
     {"getrandom_fail",      "getrandom",     PT_KPROBE, .params.kprobe_ERRN=-11},
     {"gettimeofday_fail",   "gettimeofday",  PT_KPROBE, .params.kprobe_ERRN=-1},
     {"ioctl_fail",          "ioctl",         PT_KPROBE, .params.kprobe_ERRN=-25},
@@ -81,6 +77,12 @@ static struct fault_entry fault_registry[] = {
     {"force_close_ret_err", "close",         PT_KRETPROBE, .params.kretprobe_RETV = -1L},
     {"force_read_ret_ok",   "read",          PT_KRETPROBE, .params.kretprobe_RETV = 0L},
     {"force_open_ret_eperm","openat",        PT_KRETPROBE, .params.kretprobe_RETV = (long)-EPERM}, // Example
+
+    // [MMO] MEMORY CORRUPTION FAULTS
+    {"mmap_fail",           "mmap",          PT_KPROBE, .params.kprobe_ERRN=-12},
+    {"mmap_oom",            "mmap",          PT_KPROBE, .params.kprobe_ERRN=-12},
+    {"brk_fail",            "brk",           PT_KPROBE, .params.kprobe_ERRN=-12},
+    {"mlock_fail",          "mlock",         PT_KPROBE, .params.kprobe_ERRN=-12},
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
