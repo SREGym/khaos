@@ -85,6 +85,7 @@ static struct fault_entry fault_registry[] = {
     {"force_mmap_eagain",   "mmap",          PT_KRETPROBE, .params.kretprobe_RETV = -11L},
     {"force_brk_eagain",    "brk",           PT_KRETPROBE, .params.kretprobe_RETV = -11L},    
     {"force_mlock_eperm",   "mlock",         PT_KRETPROBE, .params.kretprobe_RETV = -1L},
+    {"force_mprotect_eacces", "mprotect",    PT_KRETPROBE, .params.kretprobe_RETV = -13L},
 
     // ---------------------------- SPECIFIC FAULTS ----------------------------------
 
@@ -94,6 +95,7 @@ static struct fault_entry fault_registry[] = {
     {"brk_fail",            "brk",           PT_KPROBE, .params.kprobe_ERRN=-12},
     {"mlock_fail",          "mlock",         PT_KPROBE, .params.kprobe_ERRN=-12},
     {"force_mlock_eperm",   "mlock",         PT_KRETPROBE, .params.kretprobe_RETV = -1L},
+    {"force_mprotect_eacces", "mprotect",    PT_KRETPROBE, .params.kretprobe_RETV = -13L},
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
