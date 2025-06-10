@@ -82,8 +82,9 @@ static struct fault_entry fault_registry[] = {
     {"force_close_ret_err", "close",         PT_KRETPROBE, .params.kretprobe_RETV = -1L},
     {"force_read_ret_ok",   "read",          PT_KRETPROBE, .params.kretprobe_RETV = 0L},
     {"force_open_ret_eperm","openat",        PT_KRETPROBE, .params.kretprobe_RETV = (long)-EPERM}, // Example
-    {"force_mmap_eagain", "mmap",            PT_KRETPROBE, .params.kretprobe_RETV = -11L},
-    {"force_brk_eagain",  "brk",             PT_KRETPROBE, .params.kretprobe_RETV = -11L},    
+    {"force_mmap_eagain",   "mmap",          PT_KRETPROBE, .params.kretprobe_RETV = -11L},
+    {"force_brk_eagain",    "brk",           PT_KRETPROBE, .params.kretprobe_RETV = -11L},    
+    {"force_mlock_eperm",   "mlock",         PT_KRETPROBE, .params.kretprobe_RETV = -1L},
 
     // ---------------------------- SPECIFIC FAULTS ----------------------------------
 
@@ -92,6 +93,7 @@ static struct fault_entry fault_registry[] = {
     {"mmap_oom",            "mmap",          PT_KPROBE, .params.kprobe_ERRN=-12},
     {"brk_fail",            "brk",           PT_KPROBE, .params.kprobe_ERRN=-12},
     {"mlock_fail",          "mlock",         PT_KPROBE, .params.kprobe_ERRN=-12},
+    {"force_mlock_eperm",   "mlock",         PT_KRETPROBE, .params.kretprobe_RETV = -1L},
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
