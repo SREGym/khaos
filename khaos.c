@@ -79,23 +79,25 @@ static struct fault_entry fault_registry[] = {
     {"mlock_fail",          "mlock",         PT_KPROBE, .params.kprobe_ERRN=-12},
     
     // ADD KRETPROBE FAULTS HERE
-    {"force_close_ret_err", "close",         PT_KRETPROBE, .params.kretprobe_RETV = -1L},
-    {"force_read_ret_ok",   "read",          PT_KRETPROBE, .params.kretprobe_RETV = 0L},
-    {"force_open_ret_eperm","openat",        PT_KRETPROBE, .params.kretprobe_RETV = (long)-EPERM}, // Example
-    {"force_mmap_eagain",   "mmap",          PT_KRETPROBE, .params.kretprobe_RETV = -11L},
-    {"force_brk_eagain",    "brk",           PT_KRETPROBE, .params.kretprobe_RETV = -11L},    
-    {"force_mlock_eperm",   "mlock",         PT_KRETPROBE, .params.kretprobe_RETV = -1L},
-    {"force_mprotect_eacces", "mprotect",    PT_KRETPROBE, .params.kretprobe_RETV = -13L},
+    {"force_close_ret_err", "close",         PT_KRETPROBE, .params.kretprobe_RETV=-1L},
+    {"force_read_ret_ok",   "read",          PT_KRETPROBE, .params.kretprobe_RETV=0L},
+    {"force_open_ret_eperm","openat",        PT_KRETPROBE, .params.kretprobe_RETV=(long)-EPERM}, // Example
+    {"force_mmap_eagain",   "mmap",          PT_KRETPROBE, .params.kretprobe_RETV=-11L},
+    {"force_brk_eagain",    "brk",           PT_KRETPROBE, .params.kretprobe_RETV=-11L},    
+    {"force_mlock_eperm",   "mlock",         PT_KRETPROBE, .params.kretprobe_RETV=-1L},
+    {"force_mprotect_eacces", "mprotect",    PT_KRETPROBE, .params.kretprobe_RETV=-13L},
+    {"force_swapon_einval", "swapon",        PT_KRETPROBE, .params.kretprobe_RETV=-22L},
 
     // ---------------------------- SPECIFIC FAULTS ----------------------------------
 
     // MEMORY CORRUPTION FAULTS
-    {"mmap_fail",           "mmap",          PT_KPROBE, .params.kprobe_ERRN=-12},
-    {"mmap_oom",            "mmap",          PT_KPROBE, .params.kprobe_ERRN=-12},
-    {"brk_fail",            "brk",           PT_KPROBE, .params.kprobe_ERRN=-12},
-    {"mlock_fail",          "mlock",         PT_KPROBE, .params.kprobe_ERRN=-12},
-    {"force_mlock_eperm",   "mlock",         PT_KRETPROBE, .params.kretprobe_RETV = -1L},
-    {"force_mprotect_eacces", "mprotect",    PT_KRETPROBE, .params.kretprobe_RETV = -13L},
+    {"mmap_fail",             "mmap",          PT_KPROBE,    .params.kprobe_ERRN=-12},
+    {"mmap_oom",              "mmap",          PT_KPROBE,    .params.kprobe_ERRN=-12},
+    {"brk_fail",              "brk",           PT_KPROBE,    .params.kprobe_ERRN=-12},
+    {"mlock_fail",            "mlock",         PT_KPROBE,    .params.kprobe_ERRN=-12},
+    {"force_mlock_eperm",     "mlock",         PT_KRETPROBE, .params.kretprobe_RETV=-1L},
+    {"force_mprotect_eacces", "mprotect",      PT_KRETPROBE, .params.kretprobe_RETV=-13L},
+    {"force_swapon_einval",   "swapon",        PT_KRETPROBE, .params.kretprobe_RETV=-22L},
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
