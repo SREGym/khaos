@@ -53,6 +53,7 @@ struct fault_entry {
 /* } */
 
 static struct fault_entry fault_registry[] = {
+    // ----------------- GENERAL SYSCALL INJECTION -----------------------------------
     // KPROBE FAULTS
     {"read_error",          "read",          PT_KPROBE, .params.kprobe_ERRN=-5},
     {"write_error",         "write",         PT_KPROBE, .params.kprobe_ERRN=-28},
@@ -72,13 +73,21 @@ static struct fault_entry fault_registry[] = {
     {"setns_fail",          "setns",         PT_KPROBE, .params.kprobe_ERRN=-1},
     {"prlimit_fail",        "prlimit64",     PT_KPROBE, .params.kprobe_ERRN=-1},
     {"socket_block",        "socket",        PT_KPROBE, .params.kprobe_ERRN=-1},
+    {"mmap_fail",           "mmap",          PT_KPROBE, .params.kprobe_ERRN=-12},
+    {"mmap_oom",            "mmap",          PT_KPROBE, .params.kprobe_ERRN=-12},
+    {"brk_fail",            "brk",           PT_KPROBE, .params.kprobe_ERRN=-12},
+    {"mlock_fail",          "mlock",         PT_KPROBE, .params.kprobe_ERRN=-12},
     
     // ADD KRETPROBE FAULTS HERE
     {"force_close_ret_err", "close",         PT_KRETPROBE, .params.kretprobe_RETV = -1L},
     {"force_read_ret_ok",   "read",          PT_KRETPROBE, .params.kretprobe_RETV = 0L},
     {"force_open_ret_eperm","openat",        PT_KRETPROBE, .params.kretprobe_RETV = (long)-EPERM}, // Example
+    {"force_mmap_eagain", "mmap",            PT_KRETPROBE, .params.kretprobe_RETV = -11L},
+    {"force_brk_eagain",  "brk",             PT_KRETPROBE, .params.kretprobe_RETV = -11L},    
 
-    // [MMO] MEMORY CORRUPTION FAULTS
+    // ---------------------------- SPECIFIC FAULTS ----------------------------------
+
+    // MEMORY CORRUPTION FAULTS
     {"mmap_fail",           "mmap",          PT_KPROBE, .params.kprobe_ERRN=-12},
     {"mmap_oom",            "mmap",          PT_KPROBE, .params.kprobe_ERRN=-12},
     {"brk_fail",            "brk",           PT_KPROBE, .params.kprobe_ERRN=-12},
