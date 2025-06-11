@@ -91,10 +91,9 @@ static struct fault_entry fault_registry[] = {
     // ---------------------------- SPECIFIC FAULTS ----------------------------------
 
     // MEMORY CORRUPTION FAULTS
-    {"mmap_fail",             "mmap",          PT_KPROBE,    .params.kprobe_ERRN=-12},
-    {"mmap_oom",              "mmap",          PT_KPROBE,    .params.kprobe_ERRN=-12},
-    {"brk_fail",              "brk",           PT_KPROBE,    .params.kprobe_ERRN=-12},
-    {"mlock_fail",            "mlock",         PT_KPROBE,    .params.kprobe_ERRN=-12},
+    {"OOM_LARGE",             "mmap",          PT_KPROBE,    .params.kprobe_ERRN=-12},
+    {"OOM_SMALL",             "brk",           PT_KPROBE,    .params.kprobe_ERRN=-12},
+    {"mem__fail",             "mlock",         PT_KPROBE,    .params.kprobe_ERRN=-12},
     {"force_mmap_eagain",     "mmap",          PT_KRETPROBE, .params.kretprobe_RETV=-11L},
     {"force_brk_eagain",      "brk",           PT_KRETPROBE, .params.kretprobe_RETV=-11L},
     {"force_mlock_eperm",     "mlock",         PT_KRETPROBE, .params.kretprobe_RETV=-1L},
