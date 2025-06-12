@@ -26,31 +26,31 @@ struct fault_entry {
     } params;
 };
 
-/* const char* get_syscall_prefix() { */
-/*     static char prefix[16] = {0}; // Static buffer to hold the prefix */
-/*     struct utsname u; */
-/**/
-/*     if (prefix[0] != 0) { */
-/*         return prefix; */
-/*     } */
-/**/
-/*     // Get system information */
-/*     if (uname(&u) < 0) { */
-/*         perror("uname failed"); */
-/*         strcpy(prefix, "sys_"); // Fallback */
-/*         return prefix; */
-/*     } */
-/**/
-/*     if (strcmp(u.machine, "x86_64") == 0) { */
-/*         strcpy(prefix, "__x64_sys_"); */
-/*     } else if (strcmp(u.machine, "aarch64") == 0) { */
-/*         strcpy(prefix, "__arm64_sys_"); */
-/*     } else { */
-/*         strcpy(prefix, "sys_"); */
-/*     } */
-/**/
-/*     return prefix; */
-/* } */
+const char* get_syscall_prefix() {
+    static char prefix[16] = {0}; // Static buffer to hold the prefix
+    struct utsname u;
+
+    if (prefix[0] != 0) {
+        return prefix;
+    }
+
+    // Get system information
+    if (uname(&u) < 0) {
+        perror("uname failed");
+        strcpy(prefix, "sys_"); // Fallback
+        return prefix;
+    }
+
+    if (strcmp(u.machine, "x86_64") == 0) {
+        strcpy(prefix, "__x64_sys_");
+    } else if (strcmp(u.machine, "aarch64") == 0) {
+        strcpy(prefix, "__arm64_sys_");
+    } else {
+        strcpy(prefix, "sys_");
+    }
+
+    return prefix;
+}
 
 static struct fault_entry fault_registry[] = {
     // ----------------- GENERAL SYSCALL INJECTION -----------------------------------
@@ -91,9 +91,9 @@ static struct fault_entry fault_registry[] = {
     // ---------------------------- SPECIFIC FAULTS ----------------------------------
 
     // MEMORY CORRUPTION FAULTS
-    {"MEM_OOM_L",             "mmap",          PT_KPROBE,    .params.kprobe_ERRN=-12},
-    {"MEM_OOM_S",             "brk",           PT_KPROBE,    .params.kprobe_ERRN=-12},
-    {"mem__fail",             "mlock",         PT_KPROBE,    .params.kprobe_ERRN=-12},
+    {"rnd_malloc_fail",       "mmap",          PT_KPROBE,    .params.kprobe_ERRN=-12},
+    {"no_heap_space",         "brk",           PT_KPROBE,    .params.kprobe_ERRN=-12},
+    {"outofmem_nonswap",      "mlock",         PT_KPROBE,    .params.kprobe_ERRN=-12},
     {"force_mmap_eagain",     "mmap",          PT_KRETPROBE, .params.kretprobe_RETV=-11L},
     {"force_brk_eagain",      "brk",           PT_KRETPROBE, .params.kretprobe_RETV=-11L},
     {"force_mlock_eperm",     "mlock",         PT_KRETPROBE, .params.kretprobe_RETV=-1L},
