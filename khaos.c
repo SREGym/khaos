@@ -9,6 +9,8 @@
 // Maximum number of arguments
 #define MAX_ARG 3
 
+#define POST_BUF_LEN 1024
+
 struct fault_entry {
     const char *name;
     const char *syscall;
@@ -64,21 +66,33 @@ void recover_fault(const char *fault_name) {
 // Main arguments should be supplied through GET data
 int main( void ) {
 
-	// TODO: potentially add buffer lengths for safety
+	char args_str[POST_BUF_LEN] = {0};
 	char *argv[MAX_ARG];
-
+	
 	// Sanity check
     if (getuid() != 0) {
         fprintf(stderr, "ERROR: This program must be run as root (use 'sudo').\n");
         return 1;
     }
 
-	// Get values from GET query
-	char *args = strtok(getenv("QUERY_STRING"), ",");
+	// Get values from POST request
+	char *method = getenv("REQUEST_METHOD");
+	if ((method == NULL) || (strcmp(method, "POST") != 0)) {
+		return 1;
+	}
 
+	char *len_str = getenv("CONTENT_LENGTH");
+	if (len_str == NULL) {
+		return 1;
+	}
+
+	int len = atoi(len_str);
+	fread(args_str, 1, len, stdin);
+	
+	char *args = strtok(args_str, "&");
 	for (int i = 0; i < MAX_ARG; i++) {
 		if (!args) { 	// Missing arguments
-			// TODO: should error messages return in POSTs?
+			// TODO: error messages?
 			fprintf(stderr, "Usage: %s <fault_name> <pid> | --recover <fault_name>\n", argv[0]);
 			return 1;
 		}
