@@ -10,14 +10,17 @@ RUN apt-get update && apt-get install -y \
     curl \
 	llvm \
 	build-essential \
+	iproute2 \
+	iputils-ping \
+	libbpf-dev \
+	#bpftool \
 	pkg-config \
 	libelf-dev \
 	make \
-	#linux-headers-$(uname -r || uname -a | awk '{print $3}') \
-	#linux-headers-generic \
     && rm -rf /var/lib/apt/lists/*
 
-RUN ls -l /usr/include
+RUN mkdir -p /kernel-headers
+ENV KERNEL_HEADERS=/kernel-headers
 
 # Copy configuration
 COPY docker-config/nginx.conf /etc/nginx/nginx.conf
@@ -32,17 +35,15 @@ COPY khaos.bpf.c /app/cgi-bin/khaos.bpf.c
 COPY Makefile /app/cgi-bin/Makefile
 COPY libbpf /app/cgi-bin/libbpf
 
-RUN ls -l
+#RUN bash -xc "\
+#cd /app/cgi-bin; \
+##pushd libbpf/src; \
+##make install; \
+##popd; \
+#make"
 
-RUN bash -xc "\
-cd /app/cgi-bin; \
-#pushd libbpf/src; \
-#make install; \
-#popd; \
-make"
-
-COPY khaos /app/cgi-bin/khaos.cgi
-RUN chmod +x /app/cgi-bin/khaos.cgi
+#COPY khaos /app/cgi-bin/khaos.cgi
+#RUN chmod +x /app/cgi-bin/khaos.cgi
 
 # Copy nginx config and entrypoint
 COPY docker-config/nginx.conf /etc/nginx/nginx.conf

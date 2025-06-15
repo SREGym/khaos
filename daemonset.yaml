@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: khaos-daemon
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: khaos-daemon
+  template:
+    metadata:
+      labels:
+        name: khaos-daemon
+    spec:
+      hostPID: true
+      containers:
+        - name: khaos-agent
+          image: khaos-image:latest
+          imagePullPolicy: Never
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - SYS_ADMIN
+                - SYS_RESOURCE
+                - NET_ADMIN
+                - BPF
+          volumeMounts:
+            - name: headers
+              mountPath: /kernel-headers
+              readOnly: true
+            - name: bpf
+              mountPath: /sys/fs/bpf
+            - name: modules
+              mountPath: /lib/modules
+              readOnly: true
+            - name: src
+              mountPath: /usr/src
+              readOnly: true
+            - name: sys
+              mountPath: /sys
+              readOnly: true
+      volumes:
+        - name: headers
+          hostPath:
+            path: /usr/src/linux-headers-6.11.0-26-generic
+        - name: bpf
+          hostPath:
+            path: /sys/fs/bpf
+        - name: modules
+          hostPath:
+            path: /lib/modules
+        - name: src
+          hostPath:
+            path: /usr/src
+        - name: sys
+          hostPath:
+            path: /sys
+      nodeSelector:
+        kubernetes.io/os: linux
+

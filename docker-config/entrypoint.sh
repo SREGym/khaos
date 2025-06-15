@@ -1,5 +1,18 @@
 #!/bin/bash
 
+# Build project files, now that the KERNEL_HEADERS exist
+export KERN_HEADERS=/kernel_headers
+
+# Files are in the /app/cgi-bin directory
+cd /app/cgi-bin;
+pushd libbpf/src;
+make install;
+popd;
+make
+
+cp khaos khaos.cgi
+chmod +x /app/cgi-bin/khaos.cgi
+
 # Ensure socket dir exists and has correct ownership
 mkdir -p /var/run/fcgiwrap
 chown www-data:www-data /var/run/fcgiwrap
