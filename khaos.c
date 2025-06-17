@@ -76,6 +76,7 @@ static struct fault_entry fault_registry[] = {
     {"setns_fail",          "setns",         PT_KPROBE, .params.kprobe_ERRN=-1},
     {"prlimit_fail",        "prlimit64",     PT_KPROBE, .params.kprobe_ERRN=-1},
     {"socket_block",        "socket",        PT_KPROBE, .params.kprobe_ERRN=-1},
+    {"bind_enetdown",       "bind",          PT_KPROBE, .params.kprobe_ERRN=-100},
     
     // ADD KRETPROBE FAULTS HERE
     {"force_close_ret_err", "close",         PT_KRETPROBE, .params.kretprobe_RETV = -1L},
