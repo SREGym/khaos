@@ -91,14 +91,15 @@ static struct fault_entry fault_registry[] = {
     // ---------------------------- SPECIFIC FAULTS ----------------------------------
 
     // MEMORY CORRUPTION FAULTS
-    {"rnd_malloc_fail",       "mmap",          PT_KPROBE,    .params.kprobe_ERRN=-12},
-    {"no_heap_space",         "brk",           PT_KPROBE,    .params.kprobe_ERRN=-12},
-    {"outofmem_nonswap",      "mlock",         PT_KPROBE,    .params.kprobe_ERRN=-12},
-    {"force_mmap_eagain",     "mmap",          PT_KRETPROBE, .params.kretprobe_RETV=-11L},
-    {"force_brk_eagain",      "brk",           PT_KRETPROBE, .params.kretprobe_RETV=-11L},
-    {"force_mlock_eperm",     "mlock",         PT_KRETPROBE, .params.kretprobe_RETV=-1L},
-    {"force_mprotect_eacces", "mprotect",      PT_KRETPROBE, .params.kretprobe_RETV=-13L},
-    {"force_swapon_einval",   "swapon",        PT_KRETPROBE, .params.kretprobe_RETV=-22L},
+    {"oom_memchunk",             "mmap",          PT_KPROBE,    .params.kprobe_ERRN=-12},
+    {"oom_heapspace",            "brk",           PT_KPROBE,    .params.kprobe_ERRN=-12},
+    {"oom_nonswap",              "mlock",         PT_KPROBE,    .params.kprobe_ERRN=-12},
+    {"hfrag_memchunk",           "mmap",          PT_KRETPROBE, .params.kretprobe_RETV=-11L},
+    {"hfrag_heapspace",          "brk",           PT_KRETPROBE, .params.kretprobe_RETV=-11L},
+    {"ptable_permit",            "mlock",         PT_KRETPROBE, .params.kretprobe_RETV=-1L},
+    {"scorrupt_rndsegfault",     "mprotect",      PT_KRETPROBE, .params.kretprobe_RETV=-13L},
+    {"thrash_swapenable",        "swapon",        PT_KRETPROBE, .params.kretprobe_RETV=-22L},
+    {"thrash_swapdisable",       "swapoff",       PT_KPROBE,    .params.kprobe_ERRN=-1}, // -EPERM
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
