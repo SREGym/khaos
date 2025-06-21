@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
@@ -6,21 +6,22 @@ RUN apt-get update && apt-get install -y \
     fcgiwrap \
     spawn-fcgi \
     gcc \
+    gcc-multilib \
 	clang \
     curl \
 	llvm \
 	build-essential \
-	iproute2 \
-	iputils-ping \
 	libbpf-dev \
-	#bpftool \
-	pkg-config \
 	libelf-dev \
+	libzstd-dev \
+	pkg-config \
 	make \
+	linux-headers-$(uname -r) \
+	linux-tools-$(uname -r) \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /kernel-headers
-ENV KERNEL_HEADERS=/kernel-headers
+#RUN mkdir -p /kernel-headers
+#ENV KERNEL_HEADERS=/kernel-headers
 
 # Copy configuration
 COPY docker-config/nginx.conf /etc/nginx/nginx.conf
@@ -34,13 +35,6 @@ COPY khaos.c /app/cgi-bin/khaos.c
 COPY khaos.bpf.c /app/cgi-bin/khaos.bpf.c
 COPY Makefile /app/cgi-bin/Makefile
 COPY libbpf /app/cgi-bin/libbpf
-
-#RUN bash -xc "\
-#cd /app/cgi-bin; \
-##pushd libbpf/src; \
-##make install; \
-##popd; \
-#make"
 
 #COPY khaos /app/cgi-bin/khaos.cgi
 #RUN chmod +x /app/cgi-bin/khaos.cgi

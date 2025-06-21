@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # Build project files, now that the KERNEL_HEADERS exist
-export KERN_HEADERS=/kernel_headers
+#export KERN_HEADERS=/kernel_headers
 
 # Files are in the /app/cgi-bin directory
-cd /app/cgi-bin;
-pushd libbpf/src;
-make install;
-popd;
+cd /app/cgi-bin
+pushd libbpf/src
+make install
+popd
 make
 
 cp khaos khaos.cgi

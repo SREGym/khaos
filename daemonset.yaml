@@ -34,25 +34,20 @@ spec:
             - name: modules
               mountPath: /lib/modules
               readOnly: true
-            - name: src
-              mountPath: /usr/src
-              readOnly: true
             - name: sys
               mountPath: /sys
               readOnly: true
       volumes:
         - name: headers
           hostPath:
-            path: /usr/src/linux-headers-6.11.0-26-generic
+            path: /usr/src
+            type: Directory
         - name: bpf
           hostPath:
             path: /sys/fs/bpf
         - name: modules
           hostPath:
             path: /lib/modules
-        - name: src
-          hostPath:
-            path: /usr/src
         - name: sys
           hostPath:
             path: /sys
