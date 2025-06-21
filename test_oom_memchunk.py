@@ -1,7 +1,7 @@
 import os
 import time
 
-print("Test [MEMORY]: oom_memchunk (PID: " + str(os.getpid()) + ")")
+print("Test [MEMORY]: oom_memchun syscall (PID: " + str(os.getpid()) + ")")
 
 while True:
     try:
