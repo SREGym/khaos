@@ -98,8 +98,8 @@ static struct fault_entry fault_registry[] = {
     {"hfrag_heapspace",          "brk",           PT_KRETPROBE, .params.kretprobe_RETV=-11L},
     {"ptable_permit",            "mlock",         PT_KRETPROBE, .params.kretprobe_RETV=-1L},
     {"scorrupt_rndsegfault",     "mprotect",      PT_KRETPROBE, .params.kretprobe_RETV=-13L},
-    {"thrash_swapenable",        "swapon",        PT_KRETPROBE, .params.kretprobe_RETV=-22L},
-    {"thrash_swapdisable",       "swapoff",       PT_KPROBE,    .params.kprobe_ERRN=-1}, // -EPERM
+    {"thrash_swapon",            "swapon",        PT_KRETPROBE, .params.kretprobe_RETV=-22L},
+    {"thrash_swapoff",           "swapoff",       PT_KPROBE,    .params.kprobe_ERRN=-1}, // -EPERM
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
