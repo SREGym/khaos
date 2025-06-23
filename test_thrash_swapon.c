@@ -62,7 +62,7 @@ int main() {
         }
         
         remove(SWAP_FILE);
-        sleep(2);
+        sleep(4);
     }
     return 0;
 }
