@@ -5,6 +5,7 @@
 #include <string.h>
 #include <sys/swap.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 
 #define SWAP_FILE "./test_swapon_file"
 
