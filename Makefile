@@ -27,7 +27,7 @@ ALL_BPF_OBJS = $(KPROBE_BPF_OBJ) $(KRETPROBE_BPF_OBJ)
 ALL_SKELS = $(KPROBE_SKEL) $(KRETPROBE_SKEL)
 
 # Test file directories
-TESTS_DIR := tests/memory_tests
+TESTS_DIR := tests
 TEST_BIN_DIR := $(TESTS_DIR)/bin
 
 # Find all C test source files recursively
