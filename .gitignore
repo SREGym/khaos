@@ -7,3 +7,4 @@ test_swapfile_on.*
 test_swapfile_off.*
 test_swapoff_file.*
 test_swapon_file.*
+/tests/bin
