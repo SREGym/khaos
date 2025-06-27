@@ -7,6 +7,7 @@ BPF_STRIP = llvm-strip -g
 
 # Include and Link flags for libbpf
 CFLAGS += -I./libbpf/include/uapi -I./libbpf/include
+CFLAGS += -I./libbpf/include/uapi -I./libbpf/include -D_POSIX_C_SOURCE=199309L
 LDFLAGS += -L./libbpf/src -lbpf
 
 # Architecture-dependent flags
@@ -34,6 +35,7 @@ TEST_BIN_DIR := $(TESTS_DIR)/bin
 TEST_C_SRCS := $(shell find $(TESTS_DIR) -name '*.c')
 # Generate corresponding binary paths in bin/
 TEST_C_BINS := $(patsubst $(TESTS_DIR)/%.c, $(TEST_BIN_DIR)/%, $(TEST_C_SRCS))
+TEST_CFLAGS := -std=c11 -Wall -O2
 
 # Default target
 all: khaos $(ALL_BPF_OBJS)
@@ -64,7 +66,7 @@ khaos: khaos.c $(ALL_SKELS)
 # Rule to compile each test binary from its source
 $(TEST_BIN_DIR)/%: $(TESTS_DIR)/%.c
 	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -O2 -o $@ $^
+	$(HOST_CC) $(TEST_CFLAGS) -o $@ $^
 
 # Clean up everything
 clean:
