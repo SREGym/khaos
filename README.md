@@ -7,7 +7,11 @@ You may also recover a fault:
 ```bash
 sudo ./khaos --recover <fault_type>
 ```
-
+### **Testing**
+```bash
+make tests
+```
+You'll find a mixture of Python and C programs that are used for testing the various faults.
 
 #### **Example: Block `read()` System Call for Process 1234**
 ```sh
