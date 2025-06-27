@@ -78,6 +78,7 @@ static struct fault_entry fault_registry[] = {
     {"brk_fail",            "brk",           PT_KPROBE, .params.kprobe_ERRN=-12},
     {"mlock_fail",          "mlock",         PT_KPROBE, .params.kprobe_ERRN=-12},
     {"bind_enetdown",       "bind",          PT_KPROBE, .params.kprobe_ERRN=-100},
+    {"mount_io_error",      "mount",         PT_KPROBE, .params.kprobe_ERRN=-5},
     
     // ADD KRETPROBE FAULTS HERE
     {"force_close_ret_err", "close",         PT_KRETPROBE, .params.kretprobe_RETV=-1L},
