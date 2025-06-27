@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <errno.h>
 #include <string.h>
+#include <sys/types.h>
 
 int main() {
 
