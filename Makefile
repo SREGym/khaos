@@ -61,7 +61,7 @@ $(KRETPROBE_SKEL): $(KRETPROBE_BPF_OBJ)
 
 # Compile host binary
 khaos: khaos.c $(ALL_SKELS)
-	$(HOST_CC) -std=c11 -Wall -O2 $(CFLAGS) khaos.c -o $@ $(LDFLAGS) -static -lbpf -lelf -lz -lzstd
+	$(HOST_CC) -std=c11 -Wall -O2 $(CFLAGS) khaos.c -o $@ $(LDFLAGS) -lbpf -lelf -lz -lzstd
 
 # Rule to compile each test binary from its source
 $(TEST_BIN_DIR)/%: $(TESTS_DIR)/%.c
