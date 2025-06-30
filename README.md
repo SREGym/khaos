@@ -7,6 +7,41 @@ You may also recover a fault:
 ```bash
 sudo ./khaos --recover <fault_type>
 ```
+
+🐳 Docker Image (Quick Start)
+
+If you prefer to run Khaos inside a container, we've provided a Docker image setup.
+Build the Docker Image Locally
+
+docker build -t jacksonarthurclark/khaos-arm:latest .
+
+Make sure you have compiled the Khaos binary and required .bpf.o and .skel.h files in the build context.
+Run the Container
+
+To inject a fault:
+
+sudo docker run --rm -it \
+  --privileged \
+  --pid=host \
+  --network=host \
+  -v /sys/kernel/debug:/sys/kernel/debug \
+  -v /sys/fs/bpf:/sys/fs/bpf \
+  -v /proc:/host/proc:ro \
+  jacksonarthurclark/khaos-arm:latest <fault_type> <pid>
+
+To recover:
+
+sudo docker run --rm -it \
+  --privileged \
+  --pid=host \
+  --network=host \
+  -v /sys/kernel/debug:/sys/kernel/debug \
+  -v /sys/fs/bpf:/sys/fs/bpf \
+  -v /proc:/host/proc:ro \
+  jacksonarthurclark/khaos-arm:latest --recover <fault_type>
+
+    ⚠️ You must run the container with --privileged and proper mounts to enable eBPF functionality.
+
 ### **Testing**
 ```bash
 make tests
