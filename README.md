@@ -12,8 +12,7 @@ sudo apt update && sudo apt install -y \
     zlib1g-dev \
     linux-headers-$(uname -r) \
     build-essential \
-    pkg-config \
-    git
+    pkg-config
 ```
 
 Next, make sure the `libbpf` submodule is initialized:
