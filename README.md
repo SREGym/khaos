@@ -1,3 +1,41 @@
+### 🔧 Build Dependencies
+
+To compile `khaos` and its eBPF components, make sure your system has the following dependencies:
+
+```bash
+sudo apt update && sudo apt install -y \
+    clang \
+    llvm \
+    gcc \
+    make \
+    libelf-dev \
+    zlib1g-dev \
+    linux-headers-$(uname -r) \
+    build-essential \
+    pkg-config \
+    git
+```
+
+Next, make sure the `libbpf` submodule is initialized:
+
+```bash
+git submodule update --init --recursive
+```
+
+Build and install `libbpf`:
+
+```bash
+cd libbpf/src
+sudo make install
+```
+
+You can then compile the full project:
+
+```bash
+cd ../..  # return to root if in libbpf
+make # or make ARCH=arm for ARM builds
+```
+
 ### **Usage**
 
 ```bash
