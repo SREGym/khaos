@@ -103,6 +103,7 @@ static struct fault_entry fault_registry[] = {
     {"stack_rndsegfault",        "mprotect",      PT_KRETPROBE, .params.kretprobe_RETV=-13L},
     {"thrash_swapon",            "swapon",        PT_KRETPROBE, .params.kretprobe_RETV=-22L},
     {"thrash_swapoff",           "swapoff",       PT_KPROBE,    .params.kprobe_ERRN=-1}, // -EPERM
+    {"memleak_munmap",           "munmap",        PT_KRETPROBE, .params.kretprobe_RETV=-22L}, // -EINVAL
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
