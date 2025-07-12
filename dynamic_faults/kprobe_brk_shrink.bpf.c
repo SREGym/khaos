@@ -53,7 +53,7 @@ int trace_brk(struct sys_enter_brk_args *ctx) {
 }
 
 // Kprobe handler: use the address from brk_addr_map for blocking
-SEC("kprobe/__x64_sys_brk")
+SEC("kprobe/ys_brk")
 int kprobe_brk_shrink_handler(struct pt_regs *ctx) {
     int pid = bpf_get_current_pid_tgid() & 0xffffffff;
     unsigned char *pid_exists;
