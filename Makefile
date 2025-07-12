@@ -22,10 +22,12 @@ endif
 # eBPF build artifacts
 KPROBE_BPF_OBJ = kprobe.bpf.o
 KRETPROBE_BPF_OBJ = kretprobe.bpf.o
+KPROBE_BRK_SHRINK_BPF_OBJ = kprobe_brk_shrink.bpf.o
 KPROBE_SKEL = kprobe.skel.h
 KRETPROBE_SKEL = kretprobe.skel.h
-ALL_BPF_OBJS = $(KPROBE_BPF_OBJ) $(KRETPROBE_BPF_OBJ)
-ALL_SKELS = $(KPROBE_SKEL) $(KRETPROBE_SKEL)
+KPROBE_BRK_SHRINK_SKEL = kprobe_brk_shrink.skel.h
+ALL_BPF_OBJS = $(KPROBE_BPF_OBJ) $(KRETPROBE_BPF_OBJ) $(KPROBE_BRK_SHRINK_BPF_OBJ)
+ALL_SKELS = $(KPROBE_SKEL) $(KRETPROBE_SKEL) $(KPROBE_BRK_SHRINK_SKEL)
 
 # Test file directories
 TESTS_DIR := tests
@@ -43,6 +45,10 @@ all: khaos $(ALL_BPF_OBJS)
 # Target to build all C test binaries
 tests: $(TEST_C_BINS)
 
+# Build the brk test program
+test_brk_shrink: tests/memory_tests/test_brk_shrink.c
+	$(HOST_CC) $(TEST_CFLAGS) -o $@ $^
+
 # Compile eBPF object files
 $(KPROBE_BPF_OBJ): kprobe.bpf.c
 	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
@@ -52,11 +58,18 @@ $(KRETPROBE_BPF_OBJ): kretprobe.bpf.c
 	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
 	$(BPF_STRIP) $@
 
+$(KPROBE_BRK_SHRINK_BPF_OBJ): dynamic_faults/kprobe_brk_shrink.bpf.c
+	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
+	$(BPF_STRIP) $@
+
 # Generate skeleton headers
 $(KPROBE_SKEL): $(KPROBE_BPF_OBJ)
 	bpftool gen skeleton $< > $@
 
 $(KRETPROBE_SKEL): $(KRETPROBE_BPF_OBJ)
+	bpftool gen skeleton $< > $@
+
+$(KPROBE_BRK_SHRINK_SKEL): $(KPROBE_BRK_SHRINK_BPF_OBJ)
 	bpftool gen skeleton $< > $@
 
 # Compile host binary
