@@ -320,11 +320,15 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        // Attach the kprobe program (kprobe_brk_shrink_handler) directly to __x64_sys_brk
+        // Attach the kprobe program (kprobe_brk_shrink_handler) directly to the correct syscall function
         LIBBPF_OPTS(bpf_kprobe_opts, opts_brk_shrink);
-        struct bpf_link *ks_link = bpf_program__attach_kprobe_opts(obj_brk_shrink->progs.kprobe_brk_shrink_handler, "__x64_sys_brk", &opts_brk_shrink);
+
+        char full_syscall_name[256];
+        snprintf(full_syscall_name, sizeof(full_syscall_name), "%s%s", get_syscall_prefix(), fault->syscall);
+
+        struct bpf_link *ks_link = bpf_program__attach_kprobe_opts(obj_brk_shrink->progs.kprobe_brk_shrink_handler, full_syscall_name, &opts_brk_shrink);
         if (libbpf_get_error(ks_link)) {
-            fprintf(stderr, "ERROR: Failed to attach kprobe program to __x64_sys_brk: %s\n", strerror(errno));
+            fprintf(stderr, "ERROR: Failed to attach kprobe program to %s: %s\n", full_syscall_name, strerror(errno));
             bpf_link__destroy(tp_link);
             kprobe_brk_shrink_bpf__destroy(obj_brk_shrink);
             return 1;
