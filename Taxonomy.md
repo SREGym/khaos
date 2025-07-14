@@ -13,7 +13,7 @@ Ideally, we will have a yaml based interface similar to [ChaosMesh](https://chao
 | Corrupted Data    | Mismatched reads/writes          | Hook `read()` and inject bit flips                  |
 | Filesystem Errors | Filesystem unmounts unexpectedly | `mount()`, `statfs()`, `unlink()`                   |
 | I/O Errors (bad sectors)  | Partial read/write failures with `EIO` errors | `pread()`, `pwrite()`, `fsync()`, `ioctl()` |
-| Disk Partition Corruption | Certain disk partitions become unreadable     | `mount()`, `umount()`, `fdisk()`            |
+| Disk Partition Corruption | Certain disk partitions become unreadable     | `mount()`, `umount()`                       |
 | RAID Degraded Mode        | Data redundancy is lost, performance drops    | `ioctl()`, `read()`, `write()`              |
 | SSD Wear-Leveling Issues  | Increased latency, inconsistent read speeds   | `sync_file_range()`, `fsync()`              |
 | Disk Read-Only Mode       | Writes are blocked, only reads allowed        | `write()`, `truncate()`, `rename()`         |
