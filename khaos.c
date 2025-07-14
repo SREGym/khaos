@@ -56,7 +56,7 @@ static struct fault_entry fault_registry[] = {
     // ----------------- GENERAL SYSCALL INJECTION -----------------------------------
     // KPROBE FAULTS
     {"read_error",          "read",          PT_KPROBE, .params.kprobe_ERRN=-5},
-    {"pread_error",         "pread64",         PT_KPROBE, .params.kprobe_ERRN=-5},
+    {"pread_error",         "pread64",       PT_KPROBE, .params.kprobe_ERRN=-5},
     {"write_error",         "write",         PT_KPROBE, .params.kprobe_ERRN=-28},
     {"pwrite_error",        "pwrite64",      PT_KPROBE, .params.kprobe_ERRN=-28},
     {"fsync_error",         "fsync",         PT_KPROBE, .params.kprobe_ERRN=-5},
