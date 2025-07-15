@@ -9,11 +9,13 @@
 
 #include "kprobe.skel.h"
 #include "kretprobe.skel.h" // UNCOMMENT/ADD this line
+#include "kprobe_brk_shrink.skel.h"
 
 // Define probe types
 enum probe_type {
   PT_KPROBE,
-  PT_KRETPROBE
+  PT_KRETPROBE,
+  PT_KPROBE_BRK_SHRINK
 };
 
 struct fault_entry {
@@ -87,7 +89,7 @@ static struct fault_entry fault_registry[] = {
     {"force_read_ret_ok",   "read",          PT_KRETPROBE, .params.kretprobe_RETV=0L},
     {"force_open_ret_eperm","openat",        PT_KRETPROBE, .params.kretprobe_RETV=(long)-EPERM}, // Example
     {"force_mmap_eagain",   "mmap",          PT_KRETPROBE, .params.kretprobe_RETV=-11L},
-    {"force_brk_eagain",    "brk",           PT_KRETPROBE, .params.kretprobe_RETV=-11L},    
+    {"force_brk_eagain",    "brk",           PT_KRETPROBE, .params.kretprobe_RETV=-11L},
     {"force_mlock_eperm",   "mlock",         PT_KRETPROBE, .params.kretprobe_RETV=-1L},
     {"force_mprotect_eacces", "mprotect",    PT_KRETPROBE, .params.kretprobe_RETV=-13L},
     {"force_swapon_einval", "swapon",        PT_KRETPROBE, .params.kretprobe_RETV=-22L},
@@ -105,6 +107,9 @@ static struct fault_entry fault_registry[] = {
     {"thrash_swapon",            "swapon",        PT_KRETPROBE, .params.kretprobe_RETV=-22L},
     {"thrash_swapoff",           "swapoff",       PT_KPROBE,    .params.kprobe_ERRN=-1}, // -EPERM
     {"memleak_munmap",           "munmap",        PT_KRETPROBE, .params.kretprobe_RETV=-22L}, // -EINVAL
+    
+    // DYNAMIC FAULTS
+    {"mem_leak_brk_shrink", "brk",           PT_KPROBE_BRK_SHRINK, .params.kprobe_ERRN=-11}, // -EAGAIN
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
@@ -119,21 +124,38 @@ const struct fault_entry* find_fault(const char *name) {
 
 void recover_fault(const char *fault_name) {
     char buf[256]; 
+    int removed = 0;
 
     snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-%s", fault_name);
     if (unlink(buf) == 0) {
         printf("Successfully removed pinned kprobe BPF link: %s\n", buf);
-        return;
+        removed = 1;
     }     
 
     // Try removing kretprobe pin path
     snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kretprobe-%s", fault_name);
     if (unlink(buf) == 0) {
         printf("Successfully removed pinned kretprobe BPF link: %s\n", buf);
-        return;
+        removed = 1;
     }
 
-    fprintf(stderr, "Failed to remove any pinned BPF links for fault: '%s'", fault_name);
+    // Try removing brk shrink tracepoint pin path
+    snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-trace-brk-shrink-%s", fault_name);
+    if (unlink(buf) == 0) {
+        printf("Successfully removed pinned brk shrink tracepoint BPF link: %s\n", buf);
+        removed = 1;
+    }
+
+    // Try removing brk shrink kprobe pin path
+    snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-brk-shrink-%s", fault_name);
+    if (unlink(buf) == 0) {
+        printf("Successfully removed pinned brk shrink kprobe BPF link: %s\n", buf);
+        removed = 1;
+    }
+
+    if (!removed) {
+        fprintf(stderr, "Failed to remove any pinned BPF links for fault: '%s'\n", fault_name);
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -264,6 +286,77 @@ int main(int argc, char *argv[]) {
 
         printf("Injected kretprobe fault '%s' (syscall: %s, forced_ret: %ld) into PID %d\n",
                fault->name, fault->syscall, fault->params.kretprobe_RETV, pid);
+    } else if (fault->type == PT_KPROBE_BRK_SHRINK) {
+        struct kprobe_brk_shrink_bpf *obj_brk_shrink = kprobe_brk_shrink_bpf__open_and_load();
+        if (!obj_brk_shrink) {
+            fprintf(stderr, "ERROR: Failed to open/load kprobe_brk_shrink BPF skeleton: %s\n", strerror(errno));
+            return 1;
+        }
+
+        // Update error map with the error code to return when blocking shrink
+        if (bpf_map__update_elem(obj_brk_shrink->maps.err_map, 
+                                &key, sizeof(key),
+                                &fault->params.kprobe_ERRN, sizeof(fault->params.kprobe_ERRN),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update kprobe_brk_shrink err_map: %s\n", strerror(errno));
+            kprobe_brk_shrink_bpf__destroy(obj_brk_shrink);
+            return 1;
+        }
+
+        // Update pid map
+        if (bpf_map__update_elem(obj_brk_shrink->maps.pid_map,
+                                &pid, sizeof(pid),
+                                &value, sizeof(value),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update kprobe_brk_shrink pid_map: %s\n", strerror(errno));
+            kprobe_brk_shrink_bpf__destroy(obj_brk_shrink);
+            return 1;
+        }
+
+        // Attach the tracepoint program (trace_brk)
+        struct bpf_link *tp_link = bpf_program__attach_tracepoint(obj_brk_shrink->progs.trace_brk, "syscalls", "sys_enter_brk");
+        if (libbpf_get_error(tp_link)) {
+            fprintf(stderr, "ERROR: Failed to attach tracepoint program: %s\n", strerror(errno));
+            kprobe_brk_shrink_bpf__destroy(obj_brk_shrink);
+            return 1;
+        }
+
+        // Attach the kprobe program (kprobe_brk_shrink_handler) directly to the correct syscall function
+        LIBBPF_OPTS(bpf_kprobe_opts, opts_brk_shrink);
+
+        char full_syscall_name[256];
+        snprintf(full_syscall_name, sizeof(full_syscall_name), "%s%s", get_syscall_prefix(), fault->syscall);
+
+        struct bpf_link *ks_link = bpf_program__attach_kprobe_opts(obj_brk_shrink->progs.kprobe_brk_shrink_handler, full_syscall_name, &opts_brk_shrink);
+        if (libbpf_get_error(ks_link)) {
+            fprintf(stderr, "ERROR: Failed to attach kprobe program to %s: %s\n", full_syscall_name, strerror(errno));
+            bpf_link__destroy(tp_link);
+            kprobe_brk_shrink_bpf__destroy(obj_brk_shrink);
+            return 1;
+        }
+
+        // Pin the tracepoint link
+        snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-trace-brk-shrink-%s", fault->name);
+        if (bpf_link__pin(tp_link, pin_path_buf) != 0) {
+            fprintf(stderr, "WARN: Failed to pin tracepoint link for %s: %s\n", fault->name, strerror(errno));
+        } else {
+            printf("Pinned tracepoint link to %s\n", pin_path_buf);
+        }
+
+        // Pin the kprobe link
+        snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-brk-shrink-%s", fault->name);
+        if (bpf_link__pin(ks_link, pin_path_buf) != 0) {
+            fprintf(stderr, "WARN: Failed to pin kprobe link for %s: %s\n", fault->name, strerror(errno));
+        } else {
+            printf("Pinned kprobe link to %s\n", pin_path_buf);
+        }
+
+        bpf_link__destroy(tp_link);
+        bpf_link__destroy(ks_link);
+        kprobe_brk_shrink_bpf__destroy(obj_brk_shrink);
+
+        printf("Injected kprobe_brk_shrink fault '%s' (syscall: %s, shrink_errno: %d) into PID %d\n",
+               fault->name, fault->syscall, fault->params.kprobe_ERRN, pid);
     } else {
         fprintf(stderr, "ERROR: Unknown fault->type defined in registry for fault: %s\n", fault->name);
         return 1;
