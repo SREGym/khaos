@@ -13,7 +13,7 @@ static int fd = -1;
 
 void cleanup(int signum) {
     
-        close(fd);
+    close(fd);
     unlink(filename);  
     exit(EXIT_SUCCESS);
 }
@@ -30,7 +30,7 @@ int main() {
     write(tmpfd, init, strlen(init));
     close(tmpfd);
 
-    int fd = open("pread_test_file.txt", O_RDONLY);
+    fd = open("pread_test_file.txt", O_RDONLY);
 
     signal(SIGINT, cleanup);
     signal(SIGTERM, cleanup);
