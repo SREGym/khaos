@@ -12,6 +12,7 @@ const char *target = "./test_umount";
 
 void cleanup(int signum) {
     // clean the test directory
+    umount2(target, MNT_DETACH);
     rmdir(target);
     exit(EXIT_SUCCESS);
 }
