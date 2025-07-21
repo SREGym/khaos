@@ -9,11 +9,15 @@
 
 #include "kprobe.skel.h"
 #include "kretprobe.skel.h" // UNCOMMENT/ADD this line
+#include "kprobe_packet_loss_sendto.skel.h"
+#include "kprobe_packet_loss_recvfrom.skel.h"
 
 // Define probe types
 enum probe_type {
   PT_KPROBE,
-  PT_KRETPROBE
+  PT_KRETPROBE,
+  PT_KPROBE_PACKET_LOSS_SENDTO,
+  PT_KPROBE_PACKET_LOSS_RECVFROM
 };
 
 struct fault_entry {
@@ -105,6 +109,10 @@ static struct fault_entry fault_registry[] = {
     {"thrash_swapon",            "swapon",        PT_KRETPROBE, .params.kretprobe_RETV=-22L},
     {"thrash_swapoff",           "swapoff",       PT_KPROBE,    .params.kprobe_ERRN=-1}, // -EPERM
     {"memleak_munmap",           "munmap",        PT_KRETPROBE, .params.kretprobe_RETV=-22L}, // -EINVAL
+
+     // NETWORK FAULTS
+    {"packet_loss_sendto",  "sendto",        PT_KPROBE_PACKET_LOSS_SENDTO, .params.kprobe_ERRN=-ECONNREFUSED},
+    {"packet_loss_recvfrom", "recvfrom",     PT_KPROBE_PACKET_LOSS_RECVFROM, .params.kprobe_ERRN=-ECONNREFUSED},
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
@@ -119,21 +127,39 @@ const struct fault_entry* find_fault(const char *name) {
 
 void recover_fault(const char *fault_name) {
     char buf[256]; 
+    int removed = 0;
 
+    // Try standard kprobe pin path
     snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-%s", fault_name);
     if (unlink(buf) == 0) {
         printf("Successfully removed pinned kprobe BPF link: %s\n", buf);
-        return;
+        removed = 1;
     }     
 
-    // Try removing kretprobe pin path
+    // Try kretprobe pin path
     snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kretprobe-%s", fault_name);
     if (unlink(buf) == 0) {
         printf("Successfully removed pinned kretprobe BPF link: %s\n", buf);
-        return;
+        removed = 1;
     }
 
-    fprintf(stderr, "Failed to remove any pinned BPF links for fault: '%s'", fault_name);
+    // Try packet loss sendto pin path
+    snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-sendto-%s", fault_name);
+    if (unlink(buf) == 0) {
+        printf("Successfully removed pinned packet loss sendto BPF link: %s\n", buf);
+        removed = 1;
+    }
+
+    // Try packet loss recvfrom pin path
+    snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-recvfrom-%s", fault_name);
+    if (unlink(buf) == 0) {
+        printf("Successfully removed pinned packet loss recvfrom BPF link: %s\n", buf);
+        removed = 1;
+    }
+
+    if (!removed) {
+        fprintf(stderr, "Failed to remove any pinned BPF links for fault: '%s'\n", fault_name);
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -143,7 +169,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s <fault_name> <pid> | --recover <fault_name>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <fault_name> <pid> [optional_param] | --recover <fault_name>\n", argv[0]);
         return 1;
     }
 
@@ -162,6 +188,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     int pid = atoi(argv[2]);
+    int drop_rate = 30;
+    if ((fault->type == PT_KPROBE_PACKET_LOSS_SENDTO || fault->type == PT_KPROBE_PACKET_LOSS_RECVFROM) && argc >= 4) {
+        drop_rate = atoi(argv[3]);
+        if (drop_rate < 0) drop_rate = 0;
+        if (drop_rate > 100) drop_rate = 100;
+    }
 
     struct bpf_link *link = NULL; 
     char pin_path_buf[256]; // Renamed from 'buf' to avoid conflict with recover_fault's 'buf' if it were inlined
@@ -264,6 +296,128 @@ int main(int argc, char *argv[]) {
 
         printf("Injected kretprobe fault '%s' (syscall: %s, forced_ret: %ld) into PID %d\n",
                fault->name, fault->syscall, fault->params.kretprobe_RETV, pid);
+    } else if (fault->type == PT_KPROBE_PACKET_LOSS_SENDTO) {
+        struct kprobe_packet_loss_sendto_bpf *obj_packet_loss_sendto = kprobe_packet_loss_sendto_bpf__open_and_load();
+        if (!obj_packet_loss_sendto) {
+            fprintf(stderr, "ERROR: Failed to open/load kprobe_packet_loss_sendto BPF skeleton: %s\n", strerror(errno));
+            return 1;
+        }
+
+        // Update error map with the error code to return when dropping packets
+        if (bpf_map__update_elem(obj_packet_loss_sendto->maps.err_map, 
+                                &key, sizeof(key),
+                                &fault->params.kprobe_ERRN, sizeof(fault->params.kprobe_ERRN),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update kprobe_packet_loss_sendto err_map: %s\n", strerror(errno));
+            kprobe_packet_loss_sendto_bpf__destroy(obj_packet_loss_sendto);
+            return 1;
+        }
+
+        // Update pid map
+        if (bpf_map__update_elem(obj_packet_loss_sendto->maps.pid_map,
+                                &pid, sizeof(pid),
+                                &value, sizeof(value),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update kprobe_packet_loss_sendto pid_map: %s\n", strerror(errno));
+            kprobe_packet_loss_sendto_bpf__destroy(obj_packet_loss_sendto);
+            return 1;
+        }
+
+        // Update drop_rate map
+        if (bpf_map__update_elem(obj_packet_loss_sendto->maps.drop_rate_map,
+                                &key, sizeof(key),
+                                &drop_rate, sizeof(drop_rate),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update kprobe_packet_loss_sendto drop_rate_map: %s\n", strerror(errno));
+            kprobe_packet_loss_sendto_bpf__destroy(obj_packet_loss_sendto);
+            return 1;
+        }
+
+        // Attach the kprobe program to sendto
+        LIBBPF_OPTS(bpf_kprobe_opts, opts_packet_loss_sendto);
+        char full_syscall_name[256];
+        snprintf(full_syscall_name, sizeof(full_syscall_name), "%s%s", get_syscall_prefix(), fault->syscall);
+        struct bpf_link *ks_link = bpf_program__attach_kprobe_opts(obj_packet_loss_sendto->progs.kprobe_sendto_handler, full_syscall_name, &opts_packet_loss_sendto);
+        if (libbpf_get_error(ks_link)) {
+            fprintf(stderr, "ERROR: Failed to attach kprobe program to %s: %s\n", full_syscall_name, strerror(errno));
+            kprobe_packet_loss_sendto_bpf__destroy(obj_packet_loss_sendto);
+            return 1;
+        }
+
+        // Pin the kprobe link
+        snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-sendto-%s", fault->name);
+        if (bpf_link__pin(ks_link, pin_path_buf) != 0) {
+            fprintf(stderr, "WARN: Failed to pin packet loss sendto kprobe link for %s: %s\n", fault->name, strerror(errno));
+        } else {
+            printf("Pinned packet loss sendto kprobe link to %s\n", pin_path_buf);
+        }
+
+        bpf_link__destroy(ks_link);
+        kprobe_packet_loss_sendto_bpf__destroy(obj_packet_loss_sendto);
+
+        printf("Injected kprobe_packet_loss_sendto fault '%s' (syscall: %s, packet_loss: 20%%, error: %d) into PID %d\n",
+               fault->name, fault->syscall, fault->params.kprobe_ERRN, pid);
+    } else if (fault->type == PT_KPROBE_PACKET_LOSS_RECVFROM) {
+        struct kprobe_packet_loss_recvfrom_bpf *obj_packet_loss_recvfrom = kprobe_packet_loss_recvfrom_bpf__open_and_load();
+        if (!obj_packet_loss_recvfrom) {
+            fprintf(stderr, "ERROR: Failed to open/load kprobe_packet_loss_recvfrom BPF skeleton: %s\n", strerror(errno));
+            return 1;
+        }
+
+        // Update error map with the error code to return when dropping packets
+        if (bpf_map__update_elem(obj_packet_loss_recvfrom->maps.err_map, 
+                                &key, sizeof(key),
+                                &fault->params.kprobe_ERRN, sizeof(fault->params.kprobe_ERRN),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update kprobe_packet_loss_recvfrom err_map: %s\n", strerror(errno));
+            kprobe_packet_loss_recvfrom_bpf__destroy(obj_packet_loss_recvfrom);
+            return 1;
+        }
+
+        // Update pid map
+        if (bpf_map__update_elem(obj_packet_loss_recvfrom->maps.pid_map,
+                                &pid, sizeof(pid),
+                                &value, sizeof(value),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update kprobe_packet_loss_recvfrom pid_map: %s\n", strerror(errno));
+            kprobe_packet_loss_recvfrom_bpf__destroy(obj_packet_loss_recvfrom);
+            return 1;
+        }
+
+        // Update drop_rate map
+        if (bpf_map__update_elem(obj_packet_loss_recvfrom->maps.drop_rate_map,
+                                &key, sizeof(key),
+                                &drop_rate, sizeof(drop_rate),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update kprobe_packet_loss_recvfrom drop_rate_map: %s\n", strerror(errno));
+            kprobe_packet_loss_recvfrom_bpf__destroy(obj_packet_loss_recvfrom);
+            return 1;
+        }
+
+        // Attach the kprobe program to recvfrom
+        LIBBPF_OPTS(bpf_kprobe_opts, opts_packet_loss_recvfrom);
+        char full_syscall_name[256];
+        snprintf(full_syscall_name, sizeof(full_syscall_name), "%s%s", get_syscall_prefix(), fault->syscall);
+        struct bpf_link *ks_link = bpf_program__attach_kprobe_opts(obj_packet_loss_recvfrom->progs.kprobe_recvfrom_handler, full_syscall_name, &opts_packet_loss_recvfrom);
+        if (libbpf_get_error(ks_link)) {
+            fprintf(stderr, "ERROR: Failed to attach kprobe program to %s: %s\n", full_syscall_name, strerror(errno));
+            kprobe_packet_loss_recvfrom_bpf__destroy(obj_packet_loss_recvfrom);
+            return 1;
+        }
+
+        // Pin the kprobe link
+        snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-recvfrom-%s", fault->name);
+        if (bpf_link__pin(ks_link, pin_path_buf) != 0) {
+            fprintf(stderr, "WARN: Failed to pin packet loss recvfrom kprobe link for %s: %s\n", fault->name, strerror(errno));
+        } else {
+            printf("Pinned packet loss recvfrom kprobe link to %s\n", pin_path_buf);
+        }
+
+        bpf_link__destroy(ks_link);
+        kprobe_packet_loss_recvfrom_bpf__destroy(obj_packet_loss_recvfrom);
+
+        printf("Injected kprobe_packet_loss_recvfrom fault '%s' (syscall: %s, packet_loss: 20%%, error: %d) into PID %d\n",
+               fault->name, fault->syscall, fault->params.kprobe_ERRN, pid);
     } else {
         fprintf(stderr, "ERROR: Unknown fault->type defined in registry for fault: %s\n", fault->name);
         return 1;
