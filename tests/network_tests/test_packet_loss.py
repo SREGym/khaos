@@ -82,7 +82,7 @@ def test_packet_loss_sendto():
         pid = os.getpid()
         
         print("\n[PHASE 2] Sendto with packet loss fault injection")
-        print(f"Run: sudo ./khaos packet_loss_sendto {pid}")
+        print(f"Run: sudo ./khaos packet_loss_sendto {pid} [drop_rate] (default: 30)")
         print("Press Enter when fault is injected...")
         input()
         
@@ -122,7 +122,7 @@ def test_packet_loss_recvfrom():
         pid = os.getpid()
         
         print("\n[PHASE 2] Recvfrom with packet loss fault injection")
-        print(f"Run: sudo ./khaos packet_loss_recvfrom {pid}")
+        print(f"Run: sudo ./khaos packet_loss_recvfrom {pid} [drop_rate] (default: 30)")
         print("Press Enter when fault is injected...")
         input()
         
