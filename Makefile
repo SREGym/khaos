@@ -22,10 +22,14 @@ endif
 # eBPF build artifacts
 KPROBE_BPF_OBJ = kprobe.bpf.o
 KRETPROBE_BPF_OBJ = kretprobe.bpf.o
+PACKET_LOSS_SENDTO_BPF_OBJ = kprobe_packet_loss_sendto.bpf.o
+PACKET_LOSS_RECVFROM_BPF_OBJ = kprobe_packet_loss_recvfrom.bpf.o
 KPROBE_SKEL = kprobe.skel.h
 KRETPROBE_SKEL = kretprobe.skel.h
-ALL_BPF_OBJS = $(KPROBE_BPF_OBJ) $(KRETPROBE_BPF_OBJ)
-ALL_SKELS = $(KPROBE_SKEL) $(KRETPROBE_SKEL)
+PACKET_LOSS_SENDTO_SKEL = kprobe_packet_loss_sendto.skel.h
+PACKET_LOSS_RECVFROM_SKEL = kprobe_packet_loss_recvfrom.skel.h
+ALL_BPF_OBJS = $(KPROBE_BPF_OBJ) $(KRETPROBE_BPF_OBJ) $(PACKET_LOSS_SENDTO_BPF_OBJ) $(PACKET_LOSS_RECVFROM_BPF_OBJ)
+ALL_SKELS = $(KPROBE_SKEL) $(KRETPROBE_SKEL) $(PACKET_LOSS_SENDTO_SKEL) $(PACKET_LOSS_RECVFROM_SKEL)
 
 # Test file directories
 TESTS_DIR := tests
@@ -52,11 +56,25 @@ $(KRETPROBE_BPF_OBJ): kretprobe.bpf.c
 	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
 	$(BPF_STRIP) $@
 
+$(PACKET_LOSS_SENDTO_BPF_OBJ): network_faults/kprobe_packet_loss_sendto.bpf.c
+	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
+	$(BPF_STRIP) $@
+
+$(PACKET_LOSS_RECVFROM_BPF_OBJ): network_faults/kprobe_packet_loss_recvfrom.bpf.c
+	$(BPF_CLANG) $(BPF_CFLAGS) $(ARCH_FLAG) -c $< -o $@
+	$(BPF_STRIP) $@
+
 # Generate skeleton headers
 $(KPROBE_SKEL): $(KPROBE_BPF_OBJ)
 	bpftool gen skeleton $< > $@
 
 $(KRETPROBE_SKEL): $(KRETPROBE_BPF_OBJ)
+	bpftool gen skeleton $< > $@
+
+$(PACKET_LOSS_SENDTO_SKEL): $(PACKET_LOSS_SENDTO_BPF_OBJ)
+	bpftool gen skeleton $< > $@
+
+$(PACKET_LOSS_RECVFROM_SKEL): $(PACKET_LOSS_RECVFROM_BPF_OBJ)
 	bpftool gen skeleton $< > $@
 
 # Compile host binary
