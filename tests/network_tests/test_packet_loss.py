@@ -1,8 +1,3 @@
-"""
-Test program for packet loss fault injection.
-This program sends UDP packets and demonstrates packet loss simulation.
-"""
-
 import os
 import time
 import socket
@@ -10,13 +5,11 @@ import struct
 import sys
 
 def create_udp_socket():
-    """Create a UDP socket for testing."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(1.0)  # 1 second timeout
+    sock.settimeout(1.0)
     return sock
 
 def send_packets(sock, host='127.0.0.1', port=12345, num_packets=20):
-    """Send multiple UDP packets and track success/failure."""
     print(f"[INFO] Sending {num_packets} UDP packets to {host}:{port}")
     
     successful_sends = 0
@@ -24,11 +17,9 @@ def send_packets(sock, host='127.0.0.1', port=12345, num_packets=20):
     
     for i in range(num_packets):
         try:
-            # Create a simple packet with sequence number
-            packet_data = struct.pack('!I', i)  # 4-byte sequence number
+            packet_data = struct.pack('!I', i)
             message = f"Packet {i}: {packet_data.hex()}".encode()
             
-            # Send the packet
             bytes_sent = sock.sendto(message, (host, port))
             
             if bytes_sent > 0:
@@ -42,7 +33,6 @@ def send_packets(sock, host='127.0.0.1', port=12345, num_packets=20):
             failed_sends += 1
             print(f"[FAILED] Packet {i} send error: {e}")
         
-        # Small delay between packets
         time.sleep(0.1)
     
     print(f"\n[SUMMARY] Send Results:")
@@ -53,7 +43,6 @@ def send_packets(sock, host='127.0.0.1', port=12345, num_packets=20):
     return successful_sends, failed_sends
 
 def receive_packets(sock, num_packets=20):
-    """Receive multiple UDP packets and track success/failure."""
     print(f"[INFO] Receiving {num_packets} UDP packets")
     
     successful_receives = 0
@@ -61,7 +50,6 @@ def receive_packets(sock, num_packets=20):
     
     for i in range(num_packets):
         try:
-            # Try to receive a packet
             data, addr = sock.recvfrom(1024)
             successful_receives += 1
             print(f"[SUCCESS] Received packet {i} from {addr}: {len(data)} bytes")
@@ -81,7 +69,6 @@ def receive_packets(sock, num_packets=20):
     return successful_receives, failed_receives
 
 def test_packet_loss_sendto():
-    """Test packet loss on sendto operations."""
     print("=" * 60)
     print("TESTING PACKET LOSS ON SENDTO")
     print("=" * 60)
@@ -89,7 +76,6 @@ def test_packet_loss_sendto():
     sock = create_udp_socket()
     
     try:
-        # Test normal sendto operations
         print("\n[PHASE 1] Normal sendto operations (should work)")
         send_packets(sock)
 
@@ -100,7 +86,6 @@ def test_packet_loss_sendto():
         print("Press Enter when fault is injected...")
         input()
         
-        # Test sendto operations with fault injection
         send_packets(sock)
         
         print("\n[PHASE 3] Recovery test")
@@ -108,36 +93,30 @@ def test_packet_loss_sendto():
         print("Press Enter when fault is recovered...")
         input()
         
-        # Test sendto operations after recovery
         send_packets(sock)
         
     finally:
         sock.close()
 
 def test_packet_loss_recvfrom():
-    """Test packet loss on recvfrom operations."""
     print("=" * 60)
     print("TESTING PACKET LOSS ON RECVFROM")
     print("=" * 60)
     
-    # Create a server socket to receive packets
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_sock.bind(('127.0.0.1', 12346))
     server_sock.settimeout(1.0)
     
-    # Create a client socket to send packets
     client_sock = create_udp_socket()
     
     try:
         print("\n[PHASE 1] Normal recvfrom operations (should work)")
         print("Sending packets to trigger receives...")
         
-        # Send some packets to trigger receives
         for i in range(20):
             client_sock.sendto(f"Test packet {i}".encode(), ('127.0.0.1', 12346))
             time.sleep(0.1)
         
-        # Try to receive packets
         receive_packets(server_sock, 20)
 
         pid = os.getpid()
@@ -147,12 +126,10 @@ def test_packet_loss_recvfrom():
         print("Press Enter when fault is injected...")
         input()
         
-        # Send more packets to trigger receives with fault
         for i in range(20):
             client_sock.sendto(f"Test packet {i}".encode(), ('127.0.0.1', 12346))
             time.sleep(0.1)
         
-        # Try to receive packets with fault injection
         receive_packets(server_sock, 20)
         
         print("\n[PHASE 3] Recovery test")
@@ -160,12 +137,10 @@ def test_packet_loss_recvfrom():
         print("Press Enter when fault is recovered...")
         input()
         
-        # Send more packets to trigger receives after recovery
         for i in range(20):
             client_sock.sendto(f"Test packet {i}".encode(), ('127.0.0.1', 12346))
             time.sleep(0.1)
         
-        # Try to receive packets after recovery
         receive_packets(server_sock, 20)
         
     finally:
@@ -173,7 +148,6 @@ def test_packet_loss_recvfrom():
         client_sock.close()
 
 def main():
-    """Main test function."""
     print("Packet Loss Fault Injection Test")
     print("=" * 40)
     
@@ -187,7 +161,6 @@ def main():
             print(f"Unknown test type: {test_type}")
             print("Usage: python3 test_packet_loss.py [sendto|recvfrom]")
     else:
-        # Run both tests
         test_packet_loss_sendto()
         print("\n" + "=" * 60)
         test_packet_loss_recvfrom()
