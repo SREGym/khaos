@@ -169,7 +169,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s <fault_name> <pid> | --recover <fault_name>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <fault_name> <pid> [optional_param] | --recover <fault_name>\n", argv[0]);
         return 1;
     }
 
@@ -188,6 +188,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     int pid = atoi(argv[2]);
+    int drop_rate = 30;
+    if ((fault->type == PT_KPROBE_PACKET_LOSS_SENDTO || fault->type == PT_KPROBE_PACKET_LOSS_RECVFROM) && argc >= 4) {
+        drop_rate = atoi(argv[3]);
+        if (drop_rate < 0) drop_rate = 0;
+        if (drop_rate > 100) drop_rate = 100;
+    }
 
     struct bpf_link *link = NULL; 
     char pin_path_buf[256]; // Renamed from 'buf' to avoid conflict with recover_fault's 'buf' if it were inlined
@@ -317,6 +323,16 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
+        // Update drop_rate map
+        if (bpf_map__update_elem(obj_packet_loss_sendto->maps.drop_rate_map,
+                                &key, sizeof(key),
+                                &drop_rate, sizeof(drop_rate),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update kprobe_packet_loss_sendto drop_rate_map: %s\n", strerror(errno));
+            kprobe_packet_loss_sendto_bpf__destroy(obj_packet_loss_sendto);
+            return 1;
+        }
+
         // Attach the kprobe program to sendto
         LIBBPF_OPTS(bpf_kprobe_opts, opts_packet_loss_sendto);
         char full_syscall_name[256];
@@ -364,6 +380,16 @@ int main(int argc, char *argv[]) {
                                 &value, sizeof(value),
                                 BPF_ANY) != 0) {
             fprintf(stderr, "ERROR: Failed to update kprobe_packet_loss_recvfrom pid_map: %s\n", strerror(errno));
+            kprobe_packet_loss_recvfrom_bpf__destroy(obj_packet_loss_recvfrom);
+            return 1;
+        }
+
+        // Update drop_rate map
+        if (bpf_map__update_elem(obj_packet_loss_recvfrom->maps.drop_rate_map,
+                                &key, sizeof(key),
+                                &drop_rate, sizeof(drop_rate),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update kprobe_packet_loss_recvfrom drop_rate_map: %s\n", strerror(errno));
             kprobe_packet_loss_recvfrom_bpf__destroy(obj_packet_loss_recvfrom);
             return 1;
         }
