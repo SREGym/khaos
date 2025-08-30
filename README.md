@@ -28,6 +28,14 @@ cd libbpf/src
 sudo make install
 ```
 
+Setup headers (amd64/x86):
+```bash
+sudo apt install linux-headers-`uname -r`
+```
+
+Setup headers (arm):
+Use the `setup_arm64_headers.sh` script. 
+
 You can then compile the full project:
 
 ```bash
