@@ -33,6 +33,11 @@ Setup headers (amd64/x86):
 sudo apt install linux-headers-`uname -r`
 ```
 
+Create a symlink for headers:
+```bash
+sudo ln -s /usr/include/x86_64-linux-gnu/asm /usr/include/asm
+```
+
 Setup headers (arm):
 Use the `setup_arm64_headers.sh` script. 
 
