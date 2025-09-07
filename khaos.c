@@ -125,6 +125,43 @@ const struct fault_entry* find_fault(const char *name) {
     return NULL;
 }
 
+// Function to parse comma-separated PIDs
+int parse_pids(const char *pid_str, int *pids, int max_pids) {
+    size_t len = strlen(pid_str);
+    char *str_copy = malloc(len + 1);
+    if (!str_copy) {
+        fprintf(stderr, "ERROR: Failed to allocate memory for PID parsing\n");
+        return -1;
+    }
+    strcpy(str_copy, pid_str);
+    
+    int count = 0;
+    char *token = strtok(str_copy, ",");
+    
+    while (token != NULL && count < max_pids) {
+        while (*token == ' ' || *token == '\t') token++;
+        char *end = token + strlen(token) - 1;
+        while (end > token && (*end == ' ' || *end == '\t')) {
+            *end = '\0';
+            end--;
+        }
+        
+        int pid = atoi(token);
+        if (pid <= 0) {
+            fprintf(stderr, "ERROR: Invalid PID '%s' - must be a positive integer\n", token);
+            free(str_copy);
+            return -1;
+        }
+        
+        pids[count] = pid;
+        count++;
+        token = strtok(NULL, ",");
+    }
+    
+    free(str_copy);
+    return count;
+}
+
 
 void recover_fault(const char *fault_name, int pid) {
     char buf[256]; 
@@ -189,6 +226,7 @@ int main(int argc, char *argv[]) {
 
     if (argc < 3) {
         fprintf(stderr, "Usage: %s <fault_name> <pid> [optional_param] | --recover <fault_name> [pid]\n", argv[0]);
+        fprintf(stderr, "       %s <fault_name> <pid1,pid2,pid3,...> [optional_param]\n", argv[0]);
         return 1;
     }
 
@@ -210,20 +248,40 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: Unknown fault type: %s\n", argv[1]);
         return 1;
     }
-    int pid = atoi(argv[2]);
+    
+    // Parse comma-separated PIDs
+    int pids[64]; // Maximum 64 PIDs
+    int num_pids = parse_pids(argv[2], pids, 64);
+    if (num_pids <= 0) {
+        fprintf(stderr, "ERROR: Failed to parse PIDs from '%s'\n", argv[2]);
+        return 1;
+    }
+    
     int drop_rate = 30;
     if ((fault->type == PT_KPROBE_PACKET_LOSS_SENDTO || fault->type == PT_KPROBE_PACKET_LOSS_RECVFROM) && argc >= 4) {
         drop_rate = atoi(argv[3]);
         if (drop_rate < 0) drop_rate = 0;
         if (drop_rate > 100) drop_rate = 100;
     }
-
-    struct bpf_link *link = NULL; 
-    char pin_path_buf[512]; // Renamed from 'buf' to avoid conflict with recover_fault's 'buf' if it were inlined
-    int key = 0;  
-    unsigned char value = 1;
     
-    if (fault->type == PT_KPROBE) {
+    printf("Injecting fault '%s' into %d PIDs: ", fault->name, num_pids);
+    for (int i = 0; i < num_pids; i++) {
+        printf("%d", pids[i]);
+        if (i < num_pids - 1) printf(", ");
+    }
+    printf("\n");
+
+    // Loop through each PID and inject the fault
+    for (int pid_idx = 0; pid_idx < num_pids; pid_idx++) {
+        int pid = pids[pid_idx];
+        printf("\n--- Processing PID %d ---\n", pid);
+        
+        struct bpf_link *link = NULL; 
+        char pin_path_buf[512];
+        int key = 0;  
+        unsigned char value = 1;
+        
+        if (fault->type == PT_KPROBE) {
         struct kprobe_bpf *obj_kprobe = kprobe_bpf__open_and_load(); 
 
         if (!obj_kprobe) { 
@@ -465,10 +523,14 @@ int main(int argc, char *argv[]) {
 
         printf("Injected kprobe_packet_loss_recvfrom fault '%s' (syscall: %s, packet_loss: 20%%, error: %d) into PID %d\n",
                fault->name, fault->syscall, fault->params.kprobe_ERRN, pid);
-    } else {
-        fprintf(stderr, "ERROR: Unknown fault->type defined in registry for fault: %s\n", fault->name);
-        return 1;
+        } else {
+            fprintf(stderr, "ERROR: Unknown fault->type defined in registry for fault: %s\n", fault->name);
+            return 1;
+        }
+        
+        printf("Successfully processed PID %d\n", pid);
     }
     
+    printf("\nCompleted fault injection for all %d PIDs\n", num_pids);
     return 0;
 }
