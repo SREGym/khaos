@@ -125,40 +125,96 @@ const struct fault_entry* find_fault(const char *name) {
     return NULL;
 }
 
-void recover_fault(const char *fault_name) {
+// Function to parse comma-separated PIDs
+int parse_pids(const char *pid_str, int *pids, int max_pids) {
+    size_t len = strlen(pid_str);
+    char *str_copy = malloc(len + 1);
+    if (!str_copy) {
+        fprintf(stderr, "ERROR: Failed to allocate memory for PID parsing\n");
+        return -1;
+    }
+    strcpy(str_copy, pid_str);
+    
+    int count = 0;
+    char *token = strtok(str_copy, ",");
+    
+    while (token != NULL && count < max_pids) {
+        while (*token == ' ' || *token == '\t') token++;
+        char *end = token + strlen(token) - 1;
+        while (end > token && (*end == ' ' || *end == '\t')) {
+            *end = '\0';
+            end--;
+        }
+        
+        int pid = atoi(token);
+        if (pid <= 0) {
+            fprintf(stderr, "ERROR: Invalid PID '%s' - must be a positive integer\n", token);
+            free(str_copy);
+            return -1;
+        }
+        
+        pids[count] = pid;
+        count++;
+        token = strtok(NULL, ",");
+    }
+    
+    free(str_copy);
+    return count;
+}
+
+
+void recover_fault(const char *fault_name, int pid) {
     char buf[256]; 
     int removed = 0;
 
-    // Try standard kprobe pin path
-    snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-%s", fault_name);
-    if (unlink(buf) == 0) {
-        printf("Successfully removed pinned kprobe BPF link: %s\n", buf);
-        removed = 1;
-    }     
+    if (pid == -1) {
+        // Recover all instances of fault
+        printf("Searching for all instances of fault '%s'...\n", fault_name);
+        
+        char cmd[512];
+        snprintf(cmd, sizeof(cmd), "find /sys/fs/bpf -name '*khaos-*-%s*' -delete 2>/dev/null", fault_name);
+        int result = system(cmd);
+        if (result == 0) {
+            printf("Recovery completed for fault: '%s'\n", fault_name);
+            removed = 1;
+        }
+    } else {
 
-    // Try kretprobe pin path
-    snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kretprobe-%s", fault_name);
-    if (unlink(buf) == 0) {
-        printf("Successfully removed pinned kretprobe BPF link: %s\n", buf);
-        removed = 1;
-    }
+        // Try kprobe pin path
+        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-%s_%d", fault_name, pid);
+        if (unlink(buf) == 0) {
+            printf("Successfully removed pinned kprobe BPF link: %s\n", buf);
+            removed = 1;
+        }     
 
-    // Try packet loss sendto pin path
-    snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-sendto-%s", fault_name);
-    if (unlink(buf) == 0) {
-        printf("Successfully removed pinned packet loss sendto BPF link: %s\n", buf);
-        removed = 1;
-    }
+        // Try kretprobe pin path
+        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kretprobe-%s_%d", fault_name, pid);
+        if (unlink(buf) == 0) {
+            printf("Successfully removed pinned kretprobe BPF link: %s\n", buf);
+            removed = 1;
+        }
 
-    // Try packet loss recvfrom pin path
-    snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-recvfrom-%s", fault_name);
-    if (unlink(buf) == 0) {
-        printf("Successfully removed pinned packet loss recvfrom BPF link: %s\n", buf);
-        removed = 1;
+        // Try packet loss sendto pin path
+        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-sendto-%s_%d", fault_name, pid);
+        if (unlink(buf) == 0) {
+            printf("Successfully removed pinned packet loss sendto BPF link: %s\n", buf);
+            removed = 1;
+        }
+
+        // Try packet loss recvfrom pin path
+        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-recvfrom-%s_%d", fault_name, pid);
+        if (unlink(buf) == 0) {
+            printf("Successfully removed pinned packet loss recvfrom BPF link: %s\n", buf);
+            removed = 1;
+        }
     }
 
     if (!removed) {
-        fprintf(stderr, "Failed to remove any pinned BPF links for fault: '%s'\n", fault_name);
+        if (pid == -1) {
+            fprintf(stderr, "No pinned BPF links found for fault: '%s'\n", fault_name);
+        } else {
+            fprintf(stderr, "Failed to remove any pinned BPF links for fault: '%s' with PID: %d\n", fault_name, pid);
+        }
     }
 }
 
@@ -169,16 +225,21 @@ int main(int argc, char *argv[]) {
     }
 
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s <fault_name> <pid> [optional_param] | --recover <fault_name>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <fault_name> <pid> [optional_param] | --recover <fault_name> [pid]\n", argv[0]);
+        fprintf(stderr, "       %s <fault_name> <pid1,pid2,pid3,...> [optional_param]\n", argv[0]);
         return 1;
     }
 
     if (strcmp(argv[1], "--recover") == 0) {
         if (argc < 3) {
-            fprintf(stderr, "Usage: %s --recover <fault_name>\n", argv[0]);
+            fprintf(stderr, "Usage: %s --recover <fault_name> [pid]\n", argv[0]);
             return 1;
         }
-        recover_fault(argv[2]);
+        int pid = -1; // Default to recover all
+        if (argc >= 4) {
+            pid = atoi(argv[3]);
+        }
+        recover_fault(argv[2], pid);
         return 0;
     }
 
@@ -187,20 +248,40 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: Unknown fault type: %s\n", argv[1]);
         return 1;
     }
-    int pid = atoi(argv[2]);
+    
+    // Parse comma-separated PIDs
+    int pids[64]; // Maximum 64 PIDs
+    int num_pids = parse_pids(argv[2], pids, 64);
+    if (num_pids <= 0) {
+        fprintf(stderr, "ERROR: Failed to parse PIDs from '%s'\n", argv[2]);
+        return 1;
+    }
+    
     int drop_rate = 30;
     if ((fault->type == PT_KPROBE_PACKET_LOSS_SENDTO || fault->type == PT_KPROBE_PACKET_LOSS_RECVFROM) && argc >= 4) {
         drop_rate = atoi(argv[3]);
         if (drop_rate < 0) drop_rate = 0;
         if (drop_rate > 100) drop_rate = 100;
     }
-
-    struct bpf_link *link = NULL; 
-    char pin_path_buf[256]; // Renamed from 'buf' to avoid conflict with recover_fault's 'buf' if it were inlined
-    int key = 0;  
-    unsigned char value = 1;
     
-    if (fault->type == PT_KPROBE) {
+    printf("Injecting fault '%s' into %d PIDs: ", fault->name, num_pids);
+    for (int i = 0; i < num_pids; i++) {
+        printf("%d", pids[i]);
+        if (i < num_pids - 1) printf(", ");
+    }
+    printf("\n");
+
+    // Loop through each PID and inject the fault
+    for (int pid_idx = 0; pid_idx < num_pids; pid_idx++) {
+        int pid = pids[pid_idx];
+        printf("\n--- Processing PID %d ---\n", pid);
+        
+        struct bpf_link *link = NULL; 
+        char pin_path_buf[512];
+        int key = 0;  
+        unsigned char value = 1;
+        
+        if (fault->type == PT_KPROBE) {
         struct kprobe_bpf *obj_kprobe = kprobe_bpf__open_and_load(); 
 
         if (!obj_kprobe) { 
@@ -235,7 +316,13 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-%s", fault->name); 
+        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
+            fprintf(stderr, "ERROR: Pin path too long for kprobe: %s_%d\n", fault->name, pid);
+            bpf_link__destroy(link);
+            kprobe_bpf__destroy(obj_kprobe);
+            return 1;
+        }
+        
         if (bpf_link__pin(link, pin_path_buf) != 0) {
             fprintf(stderr, "WARN: Failed to pin kprobe link for %s: %s\n", fault->name, strerror(errno));
         } else {
@@ -284,7 +371,13 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kretprobe-%s", fault->name);
+        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kretprobe-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
+            fprintf(stderr, "ERROR: Pin path too long for kretprobe: %s_%d\n", fault->name, pid);
+            bpf_link__destroy(link);
+            kretprobe_bpf__destroy(obj_kretprobe);
+            return 1;
+        }
+        
         if (bpf_link__pin(link, pin_path_buf) != 0) {
             fprintf(stderr, "WARN: Failed to pin kretprobe link for %s: %s\n", fault->name, strerror(errno));
         } else {
@@ -345,7 +438,13 @@ int main(int argc, char *argv[]) {
         }
 
         // Pin the kprobe link
-        snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-sendto-%s", fault->name);
+        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-sendto-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
+            fprintf(stderr, "ERROR: Pin path too long for packet loss sendto: %s_%d\n", fault->name, pid);
+            bpf_link__destroy(ks_link);
+            kprobe_packet_loss_sendto_bpf__destroy(obj_packet_loss_sendto);
+            return 1;
+        }
+        
         if (bpf_link__pin(ks_link, pin_path_buf) != 0) {
             fprintf(stderr, "WARN: Failed to pin packet loss sendto kprobe link for %s: %s\n", fault->name, strerror(errno));
         } else {
@@ -406,7 +505,13 @@ int main(int argc, char *argv[]) {
         }
 
         // Pin the kprobe link
-        snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-recvfrom-%s", fault->name);
+        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-recvfrom-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
+            fprintf(stderr, "ERROR: Pin path too long for packet loss recvfrom: %s_%d\n", fault->name, pid);
+            bpf_link__destroy(ks_link);
+            kprobe_packet_loss_recvfrom_bpf__destroy(obj_packet_loss_recvfrom);
+            return 1;
+        }
+        
         if (bpf_link__pin(ks_link, pin_path_buf) != 0) {
             fprintf(stderr, "WARN: Failed to pin packet loss recvfrom kprobe link for %s: %s\n", fault->name, strerror(errno));
         } else {
@@ -418,10 +523,14 @@ int main(int argc, char *argv[]) {
 
         printf("Injected kprobe_packet_loss_recvfrom fault '%s' (syscall: %s, packet_loss: 20%%, error: %d) into PID %d\n",
                fault->name, fault->syscall, fault->params.kprobe_ERRN, pid);
-    } else {
-        fprintf(stderr, "ERROR: Unknown fault->type defined in registry for fault: %s\n", fault->name);
-        return 1;
+        } else {
+            fprintf(stderr, "ERROR: Unknown fault->type defined in registry for fault: %s\n", fault->name);
+            return 1;
+        }
+        
+        printf("Successfully processed PID %d\n", pid);
     }
     
+    printf("\nCompleted fault injection for all %d PIDs\n", num_pids);
     return 0;
 }
