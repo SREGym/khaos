@@ -9,3 +9,4 @@ test_swapoff_file.*
 test_swapon_file.*
 /tests/bin
 .dev-notes
+vmlinux.h
