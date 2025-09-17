@@ -46,6 +46,13 @@ jobs:
           linux-tools-common \
           gcc-aarch64-linux-gnu
 
+    - name: Setup kernel headers
+      run: |
+        # Create symlink for asm headers (required for eBPF compilation)
+        sudo ln -sf /usr/src/linux-headers-$(uname -r)/include/uapi/asm /usr/include/asm
+        # Verify the symlink was created
+        ls -la /usr/include/asm
+
     - name: Build libbpf
       run: |
         cd libbpf/src
