@@ -43,7 +43,7 @@ jobs:
           linux-headers-$(uname -r) \
           build-essential \
           pkg-config \
-          bpftool \
+          linux-tools-common \
           gcc-aarch64-linux-gnu
 
     - name: Build libbpf
