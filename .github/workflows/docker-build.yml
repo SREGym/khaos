@@ -48,24 +48,12 @@ jobs:
 
     - name: Setup kernel headers
       run: |
-        # Check what kernel headers are available
-        ls -la /usr/src/
-        ls -la /usr/include/
+        # Setup headers for x86_64 (from README)
+        sudo ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm
         
-        # Try different approaches to fix asm headers
-        if [ -d "/usr/src/linux-headers-$(uname -r)/arch/x86/include/uapi/asm" ]; then
-          sudo ln -sf /usr/src/linux-headers-$(uname -r)/arch/x86/include/uapi/asm /usr/include/asm
-        elif [ -d "/usr/src/linux-headers-$(uname -r)/include/uapi/asm" ]; then
-          sudo ln -sf /usr/src/linux-headers-$(uname -r)/include/uapi/asm /usr/include/asm
-        else
-          # Fallback: create a minimal asm/types.h
-          sudo mkdir -p /usr/include/asm
-          echo '#include <linux/types.h>' | sudo tee /usr/include/asm/types.h
-        fi
-        
-        # Verify the fix
+        # Verify the symlink was created
         ls -la /usr/include/asm
-        cat /usr/include/asm/types.h || echo "No types.h found"
+        echo "Kernel headers setup complete"
 
     - name: Build libbpf
       run: |
