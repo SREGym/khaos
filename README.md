@@ -4,15 +4,18 @@ To compile `khaos` and its eBPF components, make sure your system has the follow
 
 ```bash
 sudo apt update && sudo apt install -y \
-    clang \
-    llvm \
-    gcc \
-    make \
-    libelf-dev \
-    zlib1g-dev \
-    linux-headers-$(uname -r) \
-    build-essential \
-    pkg-config
+  clang \
+  llvm \
+  gcc \
+  make \
+  pkg-config \
+  build-essential \
+  libelf-dev \
+  zlib1g-dev \
+  libzstd-dev \
+  libssl-dev \
+  linux-headers-$(uname -r) \
+  bpftool
 ```
 
 Next, make sure the `libbpf` submodule is initialized:
