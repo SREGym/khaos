@@ -48,7 +48,7 @@ jobs:
 
     - name: Setup kernel headers
       run: |
-        # Setup headers for x86_64 (from README)
+        # Setup headers for x86_64
         sudo ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm
         
         # Verify the symlink was created
