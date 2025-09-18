@@ -15,7 +15,7 @@ sudo apt update && sudo apt install -y \
   libzstd-dev \
   libssl-dev \
   linux-headers-$(uname -r) \
-  bpftool
+  linux-tools-$(uname -r)
 ```
 
 Next, make sure the `libbpf` submodule is initialized:
