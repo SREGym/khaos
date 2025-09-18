@@ -1,8 +1,8 @@
-#include <linux/bpf.h>
-#include <linux/ptrace.h>
+#include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
+#include <bpf/bpf_tracing.h>
 
-struct  {
+struct {
   __uint(type, BPF_MAP_TYPE_ARRAY);
   __type(key, int);
   __type(value, long);
@@ -10,17 +10,18 @@ struct  {
 } ret_val_map SEC(".maps");
 
 struct {
-  __uint(type, BPF_MAP_TYPE_HASH); // ensure the PID number not overflow
+  __uint(type, BPF_MAP_TYPE_HASH);
   __type(key, int);
   __type(value, unsigned char);
   __uint(max_entries, 256);
 } pid_map SEC(".maps");
 
-SEC("kretprobe/")
+SEC("kretprobe/sys_open")   /* replace with the function you want */
 int kretprobe_handler(struct pt_regs *ctx) {
   int pid = bpf_get_current_pid_tgid() & 0xffffffff;
   int key = 0;
   long *forced_ret_val;
+
   if (!bpf_map_lookup_elem(&pid_map, &pid))
     return 0;
 
