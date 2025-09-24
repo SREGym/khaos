@@ -11,13 +11,15 @@
 #include "kretprobe.skel.h" // UNCOMMENT/ADD this line
 #include "kprobe_packet_loss_sendto.skel.h"
 #include "kprobe_packet_loss_recvfrom.skel.h"
+#include "kprobe_block_read_error.skel.h"
 
 // Define probe types
 enum probe_type {
   PT_KPROBE,
   PT_KRETPROBE,
   PT_KPROBE_PACKET_LOSS_SENDTO,
-  PT_KPROBE_PACKET_LOSS_RECVFROM
+  PT_KPROBE_PACKET_LOSS_RECVFROM,
+  PT_KPROBE_BLOCK_READ_ERROR
 };
 
 struct fault_entry {
@@ -113,6 +115,9 @@ static struct fault_entry fault_registry[] = {
      // NETWORK FAULTS
     {"packet_loss_sendto",  "sendto",        PT_KPROBE_PACKET_LOSS_SENDTO, .params.kprobe_ERRN=-ECONNREFUSED},
     {"packet_loss_recvfrom", "recvfrom",     PT_KPROBE_PACKET_LOSS_RECVFROM, .params.kprobe_ERRN=-ECONNREFUSED},
+
+    // BLOCK-SPECIFIC READ ERROR FAULTS
+    {"block_read_error",    "pread64",       PT_KPROBE_BLOCK_READ_ERROR, .params.kprobe_ERRN=-5}, // -EIO
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
@@ -123,6 +128,83 @@ const struct fault_entry* find_fault(const char *name) {
             return &fault_registry[i];
     }
     return NULL;
+}
+
+// Structure to represent a block range (matching eBPF structure)
+struct block_range {
+    unsigned long long start;
+    unsigned long long end;
+};
+
+// Function to parse block ranges in format "start1:end1,start2:end2,..."
+int parse_block_ranges(const char *range_str, struct block_range *ranges, int max_ranges) {
+    if (!range_str || !ranges || max_ranges <= 0) {
+        return -1;
+    }
+
+    size_t len = strlen(range_str);
+    char *str_copy = malloc(len + 1);
+    if (!str_copy) {
+        fprintf(stderr, "ERROR: Failed to allocate memory for block range parsing\n");
+        return -1;
+    }
+    strcpy(str_copy, range_str);
+
+    int count = 0;
+    char *token = strtok(str_copy, ",");
+
+    while (token != NULL && count < max_ranges) {
+        // Trim whitespace
+        while (*token == ' ' || *token == '\t') token++;
+        char *end = token + strlen(token) - 1;
+        while (end > token && (*end == ' ' || *end == '\t')) {
+            *end = '\0';
+            end--;
+        }
+
+        // Parse start:end format
+        char *colon = strchr(token, ':');
+        if (!colon) {
+            fprintf(stderr, "ERROR: Invalid block range format '%s' - expected 'start:end'\n", token);
+            free(str_copy);
+            return -1;
+        }
+
+        *colon = '\0';  // Split the string
+        char *start_str = token;
+        char *end_str = colon + 1;
+
+        // Parse start and end values
+        char *endptr;
+        unsigned long long start = strtoull(start_str, &endptr, 10);
+        if (*endptr != '\0' || endptr == start_str) {
+            fprintf(stderr, "ERROR: Invalid start block '%s' in range '%s:%s'\n", start_str, start_str, end_str);
+            free(str_copy);
+            return -1;
+        }
+
+        unsigned long long range_end = strtoull(end_str, &endptr, 10);
+        if (*endptr != '\0' || endptr == end_str) {
+            fprintf(stderr, "ERROR: Invalid end block '%s' in range '%s:%s'\n", end_str, start_str, end_str);
+            free(str_copy);
+            return -1;
+        }
+
+        if (start > range_end) {
+            fprintf(stderr, "ERROR: Invalid block range %llu:%llu - start must be <= end\n", start, range_end);
+            free(str_copy);
+            return -1;
+        }
+
+        ranges[count].start = start;
+        ranges[count].end = range_end;
+        count++;
+
+        token = strtok(NULL, ",");
+    }
+
+    free(str_copy);
+    return count;
 }
 
 // Function to parse comma-separated PIDs
@@ -207,6 +289,20 @@ void recover_fault(const char *fault_name, int pid) {
             printf("Successfully removed pinned packet loss recvfrom BPF link: %s\n", buf);
             removed = 1;
         }
+
+        // Try block read error pin path
+        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-block-read-error-%s_%d", fault_name, pid);
+        if (unlink(buf) == 0) {
+            printf("Successfully removed pinned block read error BPF link: %s\n", buf);
+            removed = 1;
+        }
+
+        // Try block read error read syscall pin path
+        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-block-read-error-read-%s_%d", fault_name, pid);
+        if (unlink(buf) == 0) {
+            printf("Successfully removed pinned block read error read syscall BPF link: %s\n", buf);
+            removed = 1;
+        }
     }
 
     if (!removed) {
@@ -227,6 +323,11 @@ int main(int argc, char *argv[]) {
     if (argc < 3) {
         fprintf(stderr, "Usage: %s <fault_name> <pid> [optional_param] | --recover <fault_name> [pid]\n", argv[0]);
         fprintf(stderr, "       %s <fault_name> <pid1,pid2,pid3,...> [optional_param]\n", argv[0]);
+        fprintf(stderr, "\nFault-specific parameters:\n");
+        fprintf(stderr, "  packet_loss_sendto, packet_loss_recvfrom: [drop_rate%%] (default: 30%%)\n");
+        fprintf(stderr, "  block_read_error: <block_ranges> (required, format: start1:end1,start2:end2,...)\n");
+        fprintf(stderr, "\nExample:\n");
+        fprintf(stderr, "  %s block_read_error 1234 \"100:199,500:599\"\n", argv[0]);
         return 1;
     }
 
@@ -262,6 +363,26 @@ int main(int argc, char *argv[]) {
         drop_rate = atoi(argv[3]);
         if (drop_rate < 0) drop_rate = 0;
         if (drop_rate > 100) drop_rate = 100;
+    }
+
+    // Parse block ranges for block_read_error fault
+    struct block_range block_ranges[32];  // Maximum 32 block ranges
+    int num_block_ranges = 0;
+    if (fault->type == PT_KPROBE_BLOCK_READ_ERROR && argc >= 4) {
+        num_block_ranges = parse_block_ranges(argv[3], block_ranges, 32);
+        if (num_block_ranges <= 0) {
+            fprintf(stderr, "ERROR: Failed to parse block ranges from '%s'\n", argv[3]);
+            return 1;
+        }
+        printf("Configured %d block ranges: ", num_block_ranges);
+        for (int i = 0; i < num_block_ranges; i++) {
+            printf("%llu:%llu", block_ranges[i].start, block_ranges[i].end);
+            if (i < num_block_ranges - 1) printf(", ");
+        }
+        printf("\n");
+    } else if (fault->type == PT_KPROBE_BLOCK_READ_ERROR) {
+        fprintf(stderr, "ERROR: block_read_error fault requires block ranges parameter (format: start1:end1,start2:end2,...)\n");
+        return 1;
     }
     
     printf("Injecting fault '%s' into %d PIDs: ", fault->name, num_pids);
@@ -523,6 +644,111 @@ int main(int argc, char *argv[]) {
 
         printf("Injected kprobe_packet_loss_recvfrom fault '%s' (syscall: %s, packet_loss: 20%%, error: %d) into PID %d\n",
                fault->name, fault->syscall, fault->params.kprobe_ERRN, pid);
+    } else if (fault->type == PT_KPROBE_BLOCK_READ_ERROR) {
+        struct kprobe_block_read_error_bpf *obj_block_read_error = kprobe_block_read_error_bpf__open_and_load();
+        if (!obj_block_read_error) {
+            fprintf(stderr, "ERROR: Failed to open/load kprobe_block_read_error BPF skeleton: %s\n", strerror(errno));
+            return 1;
+        }
+
+        // Update error map with the error code to return for blocked reads
+        if (bpf_map__update_elem(obj_block_read_error->maps.err_map,
+                                &key, sizeof(key),
+                                &fault->params.kprobe_ERRN, sizeof(fault->params.kprobe_ERRN),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update kprobe_block_read_error err_map: %s\n", strerror(errno));
+            kprobe_block_read_error_bpf__destroy(obj_block_read_error);
+            return 1;
+        }
+
+        // Update pid map
+        if (bpf_map__update_elem(obj_block_read_error->maps.pid_map,
+                                &pid, sizeof(pid),
+                                &value, sizeof(value),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update kprobe_block_read_error pid_map: %s\n", strerror(errno));
+            kprobe_block_read_error_bpf__destroy(obj_block_read_error);
+            return 1;
+        }
+
+        // Update block ranges maps
+        int zero_key = 0;
+        if (bpf_map__update_elem(obj_block_read_error->maps.num_ranges_map,
+                                &zero_key, sizeof(zero_key),
+                                &num_block_ranges, sizeof(num_block_ranges),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update kprobe_block_read_error num_ranges_map: %s\n", strerror(errno));
+            kprobe_block_read_error_bpf__destroy(obj_block_read_error);
+            return 1;
+        }
+
+        // Update individual block ranges
+        for (int i = 0; i < num_block_ranges; i++) {
+            if (bpf_map__update_elem(obj_block_read_error->maps.block_ranges_map,
+                                    &i, sizeof(i),
+                                    &block_ranges[i], sizeof(block_ranges[i]),
+                                    BPF_ANY) != 0) {
+                fprintf(stderr, "ERROR: Failed to update kprobe_block_read_error block_ranges_map[%d]: %s\n", i, strerror(errno));
+                kprobe_block_read_error_bpf__destroy(obj_block_read_error);
+                return 1;
+            }
+        }
+
+        // Attach the kprobe program to both read and pread64
+        LIBBPF_OPTS(bpf_kprobe_opts, opts_block_read_error);
+
+        // Attach to pread64 (main target)
+        char full_syscall_name[256];
+        snprintf(full_syscall_name, sizeof(full_syscall_name), "%s%s", get_syscall_prefix(), fault->syscall);
+        struct bpf_link *pread_link = bpf_program__attach_kprobe_opts(obj_block_read_error->progs.kprobe_pread_handler, full_syscall_name, &opts_block_read_error);
+        if (libbpf_get_error(pread_link)) {
+            fprintf(stderr, "ERROR: Failed to attach kprobe program to %s: %s\n", full_syscall_name, strerror(errno));
+            kprobe_block_read_error_bpf__destroy(obj_block_read_error);
+            return 1;
+        }
+
+        // Also attach to regular read syscall (although it has limited functionality)
+        char read_syscall_name[256];
+        snprintf(read_syscall_name, sizeof(read_syscall_name), "%sread", get_syscall_prefix());
+        struct bpf_link *read_link = bpf_program__attach_kprobe_opts(obj_block_read_error->progs.kprobe_read_handler, read_syscall_name, &opts_block_read_error);
+        if (libbpf_get_error(read_link)) {
+            fprintf(stderr, "WARN: Failed to attach kprobe program to %s: %s (continuing with pread64 only)\n", read_syscall_name, strerror(errno));
+            bpf_link__destroy(read_link);
+            read_link = NULL;
+        }
+
+        // Pin the pread64 link
+        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-block-read-error-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
+            fprintf(stderr, "ERROR: Pin path too long for block read error: %s_%d\n", fault->name, pid);
+            bpf_link__destroy(pread_link);
+            if (read_link) bpf_link__destroy(read_link);
+            kprobe_block_read_error_bpf__destroy(obj_block_read_error);
+            return 1;
+        }
+
+        if (bpf_link__pin(pread_link, pin_path_buf) != 0) {
+            fprintf(stderr, "WARN: Failed to pin block read error kprobe link for %s: %s\n", fault->name, strerror(errno));
+        } else {
+            printf("Pinned block read error kprobe link to %s\n", pin_path_buf);
+        }
+
+        // Pin the read link if it exists
+        if (read_link) {
+            char read_pin_path[512];
+            snprintf(read_pin_path, sizeof(read_pin_path), "/sys/fs/bpf/khaos-kprobe-block-read-error-read-%s_%d", fault->name, pid);
+            if (bpf_link__pin(read_link, read_pin_path) != 0) {
+                fprintf(stderr, "WARN: Failed to pin read syscall link for %s: %s\n", fault->name, strerror(errno));
+            } else {
+                printf("Pinned read syscall link to %s\n", read_pin_path);
+            }
+        }
+
+        bpf_link__destroy(pread_link);
+        if (read_link) bpf_link__destroy(read_link);
+        kprobe_block_read_error_bpf__destroy(obj_block_read_error);
+
+        printf("Injected kprobe_block_read_error fault '%s' (syscall: %s, EIO on %d block ranges) into PID %d\n",
+               fault->name, fault->syscall, num_block_ranges, pid);
         } else {
             fprintf(stderr, "ERROR: Unknown fault->type defined in registry for fault: %s\n", fault->name);
             return 1;
