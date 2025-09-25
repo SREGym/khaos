@@ -10,3 +10,4 @@ test_swapon_file.*
 /tests/bin
 .dev-notes
 vmlinux.h
+CLAUDE.md
