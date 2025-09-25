@@ -61,7 +61,7 @@ struct {
 } fd_pos_map SEC(".maps");
 
 // Helper function to check if a block falls within any configured range
-static inline int is_block_in_ranges(loff_t offset, size_t count, int pid) {
+static inline int is_block_in_ranges(__u64 offset, __u64 count, int pid) {
     int key = 0;
     int *num_ranges;
     struct block_range *range;
@@ -134,7 +134,7 @@ int kprobe_read_handler(struct pt_regs *ctx)
     // Get read parameters from syscall arguments
     // For read(): read(int fd, void *buf, size_t count)
     int fd = (int)PT_REGS_PARM1(ctx);
-    size_t count = (size_t)PT_REGS_PARM3(ctx);
+    __u64 count = (__u64)PT_REGS_PARM3(ctx);
 
     bpf_printk("[khaos_block_read_error] Read syscall: fd=%d, count=%lu from PID %d", fd, count, pid);
 
@@ -142,7 +142,7 @@ int kprobe_read_handler(struct pt_regs *ctx)
     struct fd_pos_key pos_key = {.pid = pid, .fd = fd};
     struct fd_pos_value *pos_val = bpf_map_lookup_elem(&fd_pos_map, &pos_key);
 
-    loff_t current_offset = 0;
+    __u64 current_offset = 0;
     if (pos_val) {
         current_offset = pos_val->pos;
         bpf_printk("[khaos_block_read_error] [PID %d] Found tracked position for fd %d: %lld", pid, fd, current_offset);
@@ -193,13 +193,13 @@ int kprobe_pread_handler(struct pt_regs *ctx)
     // Get pread64 parameters from syscall arguments
     // For pread64(): pread64(int fd, void *buf, size_t count, off_t offset)
     int fd = (int)PT_REGS_PARM1(ctx);
-    size_t count = (size_t)PT_REGS_PARM3(ctx);
-    loff_t offset = (loff_t)PT_REGS_PARM4(ctx);
+    __u64 count = (__u64)PT_REGS_PARM3(ctx);
+    __u64 offset = (__u64)PT_REGS_PARM4(ctx);
 
     bpf_printk("[khaos_block_read_error] pread64: fd=%d, count=%lu, offset=%lld\n", fd, count, offset);
 
     // Check if the read operation hits any configured block ranges
-    if (!is_block_in_ranges(offset, count)) {
+    if (!is_block_in_ranges(offset, count, pid)) {
         bpf_printk("[khaos_block_read_error] Read does not hit configured block ranges - allowing\n");
         return 0; // Allow the syscall to proceed
     }
