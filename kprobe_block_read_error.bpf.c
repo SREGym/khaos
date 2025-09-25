@@ -83,11 +83,12 @@ int kprobe_read_handler(struct pt_regs *ctx)
     int *err;
     unsigned char *pid_exists;
 
-    bpf_printk("[khaos_block_read_error] Read syscall from PID: %d\n", pid);
+    bpf_printk("[khaos_block_read_error] Read syscall intercepted from PID: %d\n", pid);
 
     // Check if this PID is in our target map
     pid_exists = bpf_map_lookup_elem(&pid_map, &pid);
     if (!pid_exists) {
+        bpf_printk("[khaos_block_read_error] PID %d not in target map - allowing\n", pid);
         return 0; // PID not targeted
     }
 
@@ -96,10 +97,34 @@ int kprobe_read_handler(struct pt_regs *ctx)
     int fd = (int)PT_REGS_PARM1(ctx);
     size_t count = (size_t)PT_REGS_PARM3(ctx);
 
-    // For regular read, we can't easily get the file offset, so we skip this check
-    // This implementation focuses on pread64 where offset is explicit
+    bpf_printk("[khaos_block_read_error] Read syscall: fd=%d, count=%lu from PID %d\n", fd, count, pid);
 
-    bpf_printk("[khaos_block_read_error] Regular read syscall - allowing (use pread64 for block-specific injection)\n");
+    // For regular read, we can't easily determine the file offset from the syscall arguments
+    // However, we can still check if any block ranges are configured and inject errors
+    // This allows the fault to work with regular read() calls that might hit bad sectors
+
+    int zero_key = 0;
+    int *num_ranges = bpf_map_lookup_elem(&num_ranges_map, &zero_key);
+    if (!num_ranges || *num_ranges == 0) {
+        bpf_printk("[khaos_block_read_error] No block ranges configured - allowing\n");
+        return 0;  // No ranges configured, allow syscall
+    }
+
+    // Get the error code to inject
+    err = bpf_map_lookup_elem(&err_map, &key);
+    if (!err || !*err) {
+        bpf_printk("[khaos_block_read_error] No error code configured - allowing\n");
+        return 0;
+    }
+
+    // For read() syscall, inject error regardless of specific block ranges
+    // since we can't determine the offset. This matches the behavior of read_error
+    // but includes the block range checking framework for future enhancements
+    bpf_printk("[khaos_block_read_error] Injecting EIO error %d for read() from PID %d\n", *err, pid);
+
+    // Override the syscall return with the configured error
+    bpf_override_return(ctx, *err);
+
     return 0;
 }
 

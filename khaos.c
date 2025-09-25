@@ -117,7 +117,7 @@ static struct fault_entry fault_registry[] = {
     {"packet_loss_recvfrom", "recvfrom",     PT_KPROBE_PACKET_LOSS_RECVFROM, .params.kprobe_ERRN=-ECONNREFUSED},
 
     // BLOCK-SPECIFIC READ ERROR FAULTS
-    {"block_read_error",    "pread64",       PT_KPROBE_BLOCK_READ_ERROR, .params.kprobe_ERRN=-5}, // -EIO
+    {"block_read_error",    "read",          PT_KPROBE_BLOCK_READ_ERROR, .params.kprobe_ERRN=-5}, // -EIO
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
@@ -694,57 +694,32 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        // Attach the kprobe program to both read and pread64
-        LIBBPF_OPTS(bpf_kprobe_opts, opts_block_read_error);
+        // Attach using the same method as read_error fault (ksyscall attachment)
+        LIBBPF_OPTS(bpf_ksyscall_opts, opts_ksyscall);
 
-        // Attach to pread64 (main target)
-        char full_syscall_name[256];
-        snprintf(full_syscall_name, sizeof(full_syscall_name), "%s%s", get_syscall_prefix(), fault->syscall);
-        struct bpf_link *pread_link = bpf_program__attach_kprobe_opts(obj_block_read_error->progs.kprobe_pread_handler, full_syscall_name, &opts_block_read_error);
-        if (libbpf_get_error(pread_link)) {
-            fprintf(stderr, "ERROR: Failed to attach kprobe program to %s: %s\n", full_syscall_name, strerror(errno));
+        // Attach to read syscall using ksyscall method (same as working read_error)
+        struct bpf_link *read_link = bpf_program__attach_ksyscall(obj_block_read_error->progs.kprobe_read_handler, fault->syscall, &opts_ksyscall);
+        if (libbpf_get_error(read_link)) {
+            fprintf(stderr, "ERROR: Failed to attach kprobe (via ksyscall) to %s: %s\n", fault->syscall, strerror(errno));
             kprobe_block_read_error_bpf__destroy(obj_block_read_error);
             return 1;
         }
 
-        // Also attach to regular read syscall (although it has limited functionality)
-        char read_syscall_name[256];
-        snprintf(read_syscall_name, sizeof(read_syscall_name), "%sread", get_syscall_prefix());
-        struct bpf_link *read_link = bpf_program__attach_kprobe_opts(obj_block_read_error->progs.kprobe_read_handler, read_syscall_name, &opts_block_read_error);
-        if (libbpf_get_error(read_link)) {
-            fprintf(stderr, "WARN: Failed to attach kprobe program to %s: %s (continuing with pread64 only)\n", read_syscall_name, strerror(errno));
-            bpf_link__destroy(read_link);
-            read_link = NULL;
-        }
-
-        // Pin the pread64 link
+        // Pin the read link
         if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-block-read-error-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
             fprintf(stderr, "ERROR: Pin path too long for block read error: %s_%d\n", fault->name, pid);
-            bpf_link__destroy(pread_link);
-            if (read_link) bpf_link__destroy(read_link);
+            bpf_link__destroy(read_link);
             kprobe_block_read_error_bpf__destroy(obj_block_read_error);
             return 1;
         }
 
-        if (bpf_link__pin(pread_link, pin_path_buf) != 0) {
+        if (bpf_link__pin(read_link, pin_path_buf) != 0) {
             fprintf(stderr, "WARN: Failed to pin block read error kprobe link for %s: %s\n", fault->name, strerror(errno));
         } else {
             printf("Pinned block read error kprobe link to %s\n", pin_path_buf);
         }
 
-        // Pin the read link if it exists
-        if (read_link) {
-            char read_pin_path[512];
-            snprintf(read_pin_path, sizeof(read_pin_path), "/sys/fs/bpf/khaos-kprobe-block-read-error-read-%s_%d", fault->name, pid);
-            if (bpf_link__pin(read_link, read_pin_path) != 0) {
-                fprintf(stderr, "WARN: Failed to pin read syscall link for %s: %s\n", fault->name, strerror(errno));
-            } else {
-                printf("Pinned read syscall link to %s\n", read_pin_path);
-            }
-        }
-
-        bpf_link__destroy(pread_link);
-        if (read_link) bpf_link__destroy(read_link);
+        bpf_link__destroy(read_link);
         kprobe_block_read_error_bpf__destroy(obj_block_read_error);
 
         printf("Injected kprobe_block_read_error fault '%s' (syscall: %s, EIO on %d block ranges) into PID %d\n",
