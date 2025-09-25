@@ -240,7 +240,7 @@ int kprobe_read_handler(struct pt_regs *ctx)
         // This is a limitation - in a real implementation, we'd need to track
         // paths during open() calls more carefully
         char proc_path[64];
-        bpf_snprintf(proc_path, sizeof(proc_path), "/proc/%d/fd/%d", pid, fd);
+        bpf_snprintf(proc_path, sizeof(proc_path), "/proc/%d/fd/%d", (__u64)pid, (__u64)fd);
 
         // In eBPF, we can't easily resolve symlinks, so we'll use a placeholder approach
         // A production implementation would need better path resolution
@@ -306,7 +306,7 @@ int kprobe_pread_handler(struct pt_regs *ctx)
 
     if (path_len <= 0) {
         char proc_path[64];
-        bpf_snprintf(proc_path, sizeof(proc_path), "/proc/%d/fd/%d", pid, fd);
+        bpf_snprintf(proc_path, sizeof(proc_path), "/proc/%d/fd/%d", (__u64)pid, (__u64)fd);
         path_len = bpf_probe_read_str(path_buf, sizeof(path_buf), proc_path);
 
         bpf_printk("[khaos_path_read_error] [PID %d] Using proc path for fd %d: %.64s", pid, fd, path_buf);
