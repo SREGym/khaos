@@ -34,20 +34,20 @@ KPROBE_BPF_OBJ = kprobe.bpf.o
 KRETPROBE_BPF_OBJ = kretprobe.bpf.o
 PACKET_LOSS_SENDTO_BPF_OBJ = kprobe_packet_loss_sendto.bpf.o
 PACKET_LOSS_RECVFROM_BPF_OBJ = kprobe_packet_loss_recvfrom.bpf.o
-BLOCK_READ_ERROR_BPF_OBJ = kprobe_block_read_error.bpf.o
+PATH_READ_ERROR_BPF_OBJ = kprobe_path_read_error.bpf.o
 
 KPROBE_SKEL = kprobe.skel.h
 KRETPROBE_SKEL = kretprobe.skel.h
 PACKET_LOSS_SENDTO_SKEL = kprobe_packet_loss_sendto.skel.h
 PACKET_LOSS_RECVFROM_SKEL = kprobe_packet_loss_recvfrom.skel.h
-BLOCK_READ_ERROR_SKEL = kprobe_block_read_error.skel.h
+PATH_READ_ERROR_SKEL = kprobe_path_read_error.skel.h
 
 ALL_BPF_OBJS = $(KPROBE_BPF_OBJ) $(KRETPROBE_BPF_OBJ) \
                $(PACKET_LOSS_SENDTO_BPF_OBJ) $(PACKET_LOSS_RECVFROM_BPF_OBJ) \
-               $(BLOCK_READ_ERROR_BPF_OBJ)
+               $(PATH_READ_ERROR_BPF_OBJ)
 ALL_SKELS = $(KPROBE_SKEL) $(KRETPROBE_SKEL) \
             $(PACKET_LOSS_SENDTO_SKEL) $(PACKET_LOSS_RECVFROM_SKEL) \
-            $(BLOCK_READ_ERROR_SKEL)
+            $(PATH_READ_ERROR_SKEL)
 
 # =========================
 # Test binaries
@@ -91,7 +91,7 @@ $(PACKET_LOSS_RECVFROM_BPF_OBJ): network_faults/kprobe_packet_loss_recvfrom.bpf.
 	$(BPF_CLANG) $(BPF_CFLAGS) -c $< -o $@
 	$(BPF_STRIP) $@
 
-$(BLOCK_READ_ERROR_BPF_OBJ): kprobe_block_read_error.bpf.c vmlinux.h
+$(PATH_READ_ERROR_BPF_OBJ): kprobe_path_read_error.bpf.c vmlinux.h
 	$(BPF_CLANG) $(BPF_CFLAGS) -c $< -o $@
 	$(BPF_STRIP) $@
 
@@ -108,7 +108,7 @@ $(PACKET_LOSS_SENDTO_SKEL): $(PACKET_LOSS_SENDTO_BPF_OBJ)
 $(PACKET_LOSS_RECVFROM_SKEL): $(PACKET_LOSS_RECVFROM_BPF_OBJ)
 	bpftool gen skeleton $< > $@
 
-$(BLOCK_READ_ERROR_SKEL): $(BLOCK_READ_ERROR_BPF_OBJ)
+$(PATH_READ_ERROR_SKEL): $(PATH_READ_ERROR_BPF_OBJ)
 	bpftool gen skeleton $< > $@
 
 # Compile host binary (static libbpf)
