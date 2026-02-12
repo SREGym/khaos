@@ -1,4 +1,5 @@
 // test_brk.c
+#define _GNU_SOURCE
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
