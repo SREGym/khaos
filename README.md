@@ -64,9 +64,23 @@ sudo ./khaos --recover <fault_type>
 🐳 Docker Image (Quick Start)
 
 If you prefer to run Khaos inside a container, we've provided a Docker image setup.
-Build the Docker Image Locally
+
+### Build Single-Architecture Image
 ```bash
-docker build -t jacksonarthurclark/khaos-arm:latest .
+docker build -t khaos:latest .
+```
+
+### Build Multi-Architecture Image (for Kubernetes DaemonSets)
+```bash
+# Create and use buildx builder
+docker buildx create --name khaos-builder --driver docker-container --bootstrap
+docker buildx use khaos-builder
+
+# Build and push multi-arch image
+docker buildx build --platform linux/amd64,linux/arm64 -t your-registry/khaos:latest --push .
+
+# Or build locally without pushing (loads only current platform)
+docker buildx build --platform linux/amd64,linux/arm64 -t khaos:latest --load .
 ```
 Make sure you have compiled the Khaos binary and required .bpf.o and .skel.h files in the build context.
 Run the Container
