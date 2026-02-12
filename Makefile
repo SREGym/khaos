@@ -68,11 +68,15 @@ tests: $(TEST_C_BINS)
 
 # Generate vmlinux.h once (BTF required in kernel)
 vmlinux.h:
-	@if ! command -v bpftool >/dev/null; then \
-		echo "Error: bpftool not found. Please install with 'sudo apt install bpftool'."; \
-		exit 1; \
+	@if [ ! -f vmlinux.h ]; then \
+		if ! command -v bpftool >/dev/null; then \
+			echo "Error: bpftool not found. Please install with 'sudo apt install bpftool'."; \
+			exit 1; \
+		fi; \
+		bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h; \
+	else \
+		echo "vmlinux.h already exists, skipping generation"; \
 	fi
-	bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
 
 # Compile eBPF object files (depend on vmlinux.h)
 $(KPROBE_BPF_OBJ): kprobe.bpf.c vmlinux.h
@@ -112,6 +116,10 @@ $(PACKET_LOSS_RECVFROM_SKEL): $(PACKET_LOSS_RECVFROM_BPF_OBJ)
 
 $(LATENT_SECTOR_ERROR_SKEL): $(LATENT_SECTOR_ERROR_BPF_OBJ)
 	bpftool gen skeleton $< > $@
+
+# Compile host binary (using local shared libbpf for Docker)
+khaos-dynamic: khaos.c $(ALL_SKELS)
+	$(HOST_CC) -std=c11 -Wall -O2 $(CFLAGS) khaos.c -o khaos ./libbpf/src/libbpf.so.1.6.0 $(LDFLAGS)
 
 # Compile host binary (static libbpf)
 khaos: khaos.c $(ALL_SKELS)

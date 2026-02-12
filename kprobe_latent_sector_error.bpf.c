@@ -34,8 +34,19 @@ int kprobe_read_handler(struct pt_regs *ctx) {
     if (!pid_exists)
         return 0;
 
+#if defined(__TARGET_ARCH_x86)
     int fd = (int)PT_REGS_PARM1(ctx);
     __u64 count = (__u64)PT_REGS_PARM3(ctx);
+#elif defined(__TARGET_ARCH_arm64)
+    int fd;
+    __u64 count;
+    bpf_probe_read_kernel(&fd, sizeof(fd), (void *)&ctx->regs[0]);
+    bpf_probe_read_kernel(&count, sizeof(count), (void *)&ctx->regs[2]);
+#else
+    // Fallback for other architectures
+    int fd = 0;
+    __u64 count = 0;
+#endif
 
     unsigned int random_val = bpf_get_prandom_u32();
     int *rate = bpf_map_lookup_elem(&error_rate_map, &key);
@@ -65,9 +76,23 @@ int kprobe_pread_handler(struct pt_regs *ctx) {
     if (!pid_exists)
         return 0;
 
+#if defined(__TARGET_ARCH_x86)
     int fd = (int)PT_REGS_PARM1(ctx);
     __u64 count = (__u64)PT_REGS_PARM3(ctx);
     __u64 offset = (__u64)PT_REGS_PARM4(ctx);
+#elif defined(__TARGET_ARCH_arm64)
+    int fd;
+    __u64 count;
+    __u64 offset;
+    bpf_probe_read_kernel(&fd, sizeof(fd), (void *)&ctx->regs[0]);
+    bpf_probe_read_kernel(&count, sizeof(count), (void *)&ctx->regs[2]);
+    bpf_probe_read_kernel(&offset, sizeof(offset), (void *)&ctx->regs[3]);
+#else
+    // Fallback for other architectures
+    int fd = 0;
+    __u64 count = 0;
+    __u64 offset = 0;
+#endif
 
     unsigned int random_val = bpf_get_prandom_u32();
     int *rate = bpf_map_lookup_elem(&error_rate_map, &key);
