@@ -34,8 +34,19 @@ int kprobe_recvfrom_handler(struct pt_regs *ctx) {
     if (!pid_exists)
         return 0;
 
+#if defined(__TARGET_ARCH_x86)
     int sockfd = (int)PT_REGS_PARM1(ctx);
     unsigned long len = (unsigned long)PT_REGS_PARM3(ctx);
+#elif defined(__TARGET_ARCH_arm64)
+    int sockfd;
+    unsigned long len;
+    bpf_probe_read_kernel(&sockfd, sizeof(sockfd), (void *)&ctx->regs[0]);
+    bpf_probe_read_kernel(&len, sizeof(len), (void *)&ctx->regs[2]);
+#else
+    // Fallback for other architectures
+    int sockfd = 0;
+    unsigned long len = 0;
+#endif
 
     unsigned int random_val = bpf_get_prandom_u32();
     int *drop_rate = bpf_map_lookup_elem(&drop_rate_map, &key);

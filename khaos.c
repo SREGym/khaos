@@ -11,13 +11,15 @@
 #include "kretprobe.skel.h" // UNCOMMENT/ADD this line
 #include "kprobe_packet_loss_sendto.skel.h"
 #include "kprobe_packet_loss_recvfrom.skel.h"
+#include "kprobe_latent_sector_error.skel.h"
 
 // Define probe types
 enum probe_type {
   PT_KPROBE,
   PT_KRETPROBE,
   PT_KPROBE_PACKET_LOSS_SENDTO,
-  PT_KPROBE_PACKET_LOSS_RECVFROM
+  PT_KPROBE_PACKET_LOSS_RECVFROM,
+  PT_KPROBE_LATENT_SECTOR_ERROR
 };
 
 struct fault_entry {
@@ -113,6 +115,10 @@ static struct fault_entry fault_registry[] = {
      // NETWORK FAULTS
     {"packet_loss_sendto",  "sendto",        PT_KPROBE_PACKET_LOSS_SENDTO, .params.kprobe_ERRN=-ECONNREFUSED},
     {"packet_loss_recvfrom", "recvfrom",     PT_KPROBE_PACKET_LOSS_RECVFROM, .params.kprobe_ERRN=-ECONNREFUSED},
+
+
+    // LATENT SECTOR ERROR (percentage-based read failures)
+    {"latent_sector_error", "read",          PT_KPROBE_LATENT_SECTOR_ERROR, .params.kprobe_ERRN=-5}, // -EIO
 };
 
 #define NUM_FAULTS (sizeof(fault_registry) / sizeof(fault_registry[0]))
@@ -124,6 +130,7 @@ const struct fault_entry* find_fault(const char *name) {
     }
     return NULL;
 }
+
 
 // Function to parse comma-separated PIDs
 int parse_pids(const char *pid_str, int *pids, int max_pids) {
@@ -207,6 +214,21 @@ void recover_fault(const char *fault_name, int pid) {
             printf("Successfully removed pinned packet loss recvfrom BPF link: %s\n", buf);
             removed = 1;
         }
+
+
+        // Try latent sector error read pin path
+        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-lse-read-%s_%d", fault_name, pid);
+        if (unlink(buf) == 0) {
+            printf("Successfully removed pinned latent sector error read BPF link: %s\n", buf);
+            removed = 1;
+        }
+
+        // Try latent sector error pread pin path
+        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-lse-pread-%s_%d", fault_name, pid);
+        if (unlink(buf) == 0) {
+            printf("Successfully removed pinned latent sector error pread BPF link: %s\n", buf);
+            removed = 1;
+        }
     }
 
     if (!removed) {
@@ -227,6 +249,11 @@ int main(int argc, char *argv[]) {
     if (argc < 3) {
         fprintf(stderr, "Usage: %s <fault_name> <pid> [optional_param] | --recover <fault_name> [pid]\n", argv[0]);
         fprintf(stderr, "       %s <fault_name> <pid1,pid2,pid3,...> [optional_param]\n", argv[0]);
+        fprintf(stderr, "\nFault-specific parameters:\n");
+        fprintf(stderr, "  packet_loss_sendto, packet_loss_recvfrom: [drop_rate%%] (default: 30%%)\n");
+        fprintf(stderr, "  latent_sector_error: [error_rate%%] (default: 50%%)\n");
+        fprintf(stderr, "\nExamples:\n");
+        fprintf(stderr, "  %s latent_sector_error 1234 50\n", argv[0]);
         return 1;
     }
 
@@ -263,7 +290,16 @@ int main(int argc, char *argv[]) {
         if (drop_rate < 0) drop_rate = 0;
         if (drop_rate > 100) drop_rate = 100;
     }
-    
+
+
+    // Parse error rate for latent_sector_error fault
+    int error_rate = 50;  // Default 50% error rate
+    if (fault->type == PT_KPROBE_LATENT_SECTOR_ERROR && argc >= 4) {
+        error_rate = atoi(argv[3]);
+        if (error_rate < 0) error_rate = 0;
+        if (error_rate > 100) error_rate = 100;
+    }
+
     printf("Injecting fault '%s' into %d PIDs: ", fault->name, num_pids);
     for (int i = 0; i < num_pids; i++) {
         printf("%d", pids[i]);
@@ -523,6 +559,96 @@ int main(int argc, char *argv[]) {
 
         printf("Injected kprobe_packet_loss_recvfrom fault '%s' (syscall: %s, packet_loss: 20%%, error: %d) into PID %d\n",
                fault->name, fault->syscall, fault->params.kprobe_ERRN, pid);
+    } else if (fault->type == PT_KPROBE_LATENT_SECTOR_ERROR) {
+        struct kprobe_latent_sector_error_bpf *obj_lse = kprobe_latent_sector_error_bpf__open_and_load();
+        if (!obj_lse) {
+            fprintf(stderr, "ERROR: Failed to open/load kprobe_latent_sector_error BPF skeleton: %s\n", strerror(errno));
+            return 1;
+        }
+
+        // Update error map
+        if (bpf_map__update_elem(obj_lse->maps.err_map,
+                                &key, sizeof(key),
+                                &fault->params.kprobe_ERRN, sizeof(fault->params.kprobe_ERRN),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update latent_sector_error err_map: %s\n", strerror(errno));
+            kprobe_latent_sector_error_bpf__destroy(obj_lse);
+            return 1;
+        }
+
+        // Update pid map
+        if (bpf_map__update_elem(obj_lse->maps.pid_map,
+                                &pid, sizeof(pid),
+                                &value, sizeof(value),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update latent_sector_error pid_map: %s\n", strerror(errno));
+            kprobe_latent_sector_error_bpf__destroy(obj_lse);
+            return 1;
+        }
+
+        // Update error rate map
+        if (bpf_map__update_elem(obj_lse->maps.error_rate_map,
+                                &key, sizeof(key),
+                                &error_rate, sizeof(error_rate),
+                                BPF_ANY) != 0) {
+            fprintf(stderr, "ERROR: Failed to update latent_sector_error error_rate_map: %s\n", strerror(errno));
+            kprobe_latent_sector_error_bpf__destroy(obj_lse);
+            return 1;
+        }
+
+        // Attach to read syscall
+        LIBBPF_OPTS(bpf_ksyscall_opts, opts_ksyscall);
+        struct bpf_link *read_link = bpf_program__attach_ksyscall(obj_lse->progs.kprobe_read_handler, "read", &opts_ksyscall);
+        if (libbpf_get_error(read_link)) {
+            fprintf(stderr, "ERROR: Failed to attach kprobe (via ksyscall) to read: %s\n", strerror(errno));
+            kprobe_latent_sector_error_bpf__destroy(obj_lse);
+            return 1;
+        }
+
+        // Pin the read link
+        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-lse-read-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
+            fprintf(stderr, "ERROR: Pin path too long for latent_sector_error: %s_%d\n", fault->name, pid);
+            bpf_link__destroy(read_link);
+            kprobe_latent_sector_error_bpf__destroy(obj_lse);
+            return 1;
+        }
+
+        if (bpf_link__pin(read_link, pin_path_buf) != 0) {
+            fprintf(stderr, "WARN: Failed to pin latent_sector_error read link for %s: %s\n", fault->name, strerror(errno));
+        } else {
+            printf("Pinned latent_sector_error read link to %s\n", pin_path_buf);
+        }
+
+        // Attach to pread64 syscall
+        struct bpf_link *pread_link = bpf_program__attach_ksyscall(obj_lse->progs.kprobe_pread_handler, "pread64", &opts_ksyscall);
+        if (libbpf_get_error(pread_link)) {
+            fprintf(stderr, "ERROR: Failed to attach kprobe (via ksyscall) to pread64: %s\n", strerror(errno));
+            bpf_link__destroy(read_link);
+            kprobe_latent_sector_error_bpf__destroy(obj_lse);
+            return 1;
+        }
+
+        // Pin the pread link
+        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-lse-pread-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
+            fprintf(stderr, "ERROR: Pin path too long for latent_sector_error pread: %s_%d\n", fault->name, pid);
+            bpf_link__destroy(read_link);
+            bpf_link__destroy(pread_link);
+            kprobe_latent_sector_error_bpf__destroy(obj_lse);
+            return 1;
+        }
+
+        if (bpf_link__pin(pread_link, pin_path_buf) != 0) {
+            fprintf(stderr, "WARN: Failed to pin latent_sector_error pread link for %s: %s\n", fault->name, strerror(errno));
+        } else {
+            printf("Pinned latent_sector_error pread link to %s\n", pin_path_buf);
+        }
+
+        bpf_link__destroy(read_link);
+        bpf_link__destroy(pread_link);
+        kprobe_latent_sector_error_bpf__destroy(obj_lse);
+
+        printf("Injected latent_sector_error fault '%s' (read/pread64, error_rate=%d%%, errno=%d) into PID %d\n",
+               fault->name, error_rate, fault->params.kprobe_ERRN, pid);
         } else {
             fprintf(stderr, "ERROR: Unknown fault->type defined in registry for fault: %s\n", fault->name);
             return 1;

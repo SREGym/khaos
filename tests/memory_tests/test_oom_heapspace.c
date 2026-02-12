@@ -1,4 +1,5 @@
 // Recovery track ONLY possible with ltrace due to sbrk's restrictions on states
+#define _GNU_SOURCE
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>

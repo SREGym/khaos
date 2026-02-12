@@ -1,0 +1,22 @@
+# Ignore pre-built artifacts to ensure clean builds
+khaos
+*.o
+*.skel.h
+vmlinux.h
+tests/bin/
+
+# Ignore git and IDE files
+.git
+.github
+.claude
+.vscode
+*.swp
+*.swo
+*~
+
+# Ignore docs and non-essential files
+README.md
+*.md
+Dockerfile*
+build-*.sh
+k8s-*.yaml
