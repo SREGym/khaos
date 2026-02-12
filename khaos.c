@@ -11,8 +11,6 @@
 #include "kretprobe.skel.h" // UNCOMMENT/ADD this line
 #include "kprobe_packet_loss_sendto.skel.h"
 #include "kprobe_packet_loss_recvfrom.skel.h"
-#include "kprobe_block_read_error.skel.h"
-#include "kprobe_path_read_error.skel.h"
 #include "kprobe_latent_sector_error.skel.h"
 
 // Define probe types
@@ -21,8 +19,6 @@ enum probe_type {
   PT_KRETPROBE,
   PT_KPROBE_PACKET_LOSS_SENDTO,
   PT_KPROBE_PACKET_LOSS_RECVFROM,
-  PT_KPROBE_BLOCK_READ_ERROR,
-  PT_KPROBE_PATH_READ_ERROR,
   PT_KPROBE_LATENT_SECTOR_ERROR
 };
 
@@ -120,12 +116,6 @@ static struct fault_entry fault_registry[] = {
     {"packet_loss_sendto",  "sendto",        PT_KPROBE_PACKET_LOSS_SENDTO, .params.kprobe_ERRN=-ECONNREFUSED},
     {"packet_loss_recvfrom", "recvfrom",     PT_KPROBE_PACKET_LOSS_RECVFROM, .params.kprobe_ERRN=-ECONNREFUSED},
 
-    // BLOCK-SPECIFIC READ ERROR FAULTS
-    {"block_read_error",    "read",          PT_KPROBE_BLOCK_READ_ERROR, .params.kprobe_ERRN=-5}, // -EIO
-
-    // PATH-SPECIFIC READ ERROR FAULTS
-    {"path_read_error",     "read",          PT_KPROBE_PATH_READ_ERROR,  .params.kprobe_ERRN=-5}, // -EIO
-    {"directory_read_error", "read",         PT_KPROBE_PATH_READ_ERROR,  .params.kprobe_ERRN=-5}, // -EIO (alias)
 
     // LATENT SECTOR ERROR (percentage-based read failures)
     {"latent_sector_error", "read",          PT_KPROBE_LATENT_SECTOR_ERROR, .params.kprobe_ERRN=-5}, // -EIO
@@ -141,89 +131,6 @@ const struct fault_entry* find_fault(const char *name) {
     return NULL;
 }
 
-// Structure to represent a block range (matching eBPF structure)
-struct block_range {
-    unsigned long long start;
-    unsigned long long end;
-};
-
-// Structure to represent a file path pattern (matching eBPF structure)
-#define MAX_PATH_LEN 256
-struct path_pattern {
-    char pattern[MAX_PATH_LEN];
-    int len;
-};
-
-// Function to parse block ranges in format "start1:end1,start2:end2,..."
-int parse_block_ranges(const char *range_str, struct block_range *ranges, int max_ranges) {
-    if (!range_str || !ranges || max_ranges <= 0) {
-        return -1;
-    }
-
-    size_t len = strlen(range_str);
-    char *str_copy = malloc(len + 1);
-    if (!str_copy) {
-        fprintf(stderr, "ERROR: Failed to allocate memory for block range parsing\n");
-        return -1;
-    }
-    strcpy(str_copy, range_str);
-
-    int count = 0;
-    char *token = strtok(str_copy, ",");
-
-    while (token != NULL && count < max_ranges) {
-        // Trim whitespace
-        while (*token == ' ' || *token == '\t') token++;
-        char *end = token + strlen(token) - 1;
-        while (end > token && (*end == ' ' || *end == '\t')) {
-            *end = '\0';
-            end--;
-        }
-
-        // Parse start:end format
-        char *colon = strchr(token, ':');
-        if (!colon) {
-            fprintf(stderr, "ERROR: Invalid block range format '%s' - expected 'start:end'\n", token);
-            free(str_copy);
-            return -1;
-        }
-
-        *colon = '\0';  // Split the string
-        char *start_str = token;
-        char *end_str = colon + 1;
-
-        // Parse start and end values
-        char *endptr;
-        unsigned long long start = strtoull(start_str, &endptr, 10);
-        if (*endptr != '\0' || endptr == start_str) {
-            fprintf(stderr, "ERROR: Invalid start block '%s' in range '%s:%s'\n", start_str, start_str, end_str);
-            free(str_copy);
-            return -1;
-        }
-
-        unsigned long long range_end = strtoull(end_str, &endptr, 10);
-        if (*endptr != '\0' || endptr == end_str) {
-            fprintf(stderr, "ERROR: Invalid end block '%s' in range '%s:%s'\n", end_str, start_str, end_str);
-            free(str_copy);
-            return -1;
-        }
-
-        if (start > range_end) {
-            fprintf(stderr, "ERROR: Invalid block range %llu:%llu - start must be <= end\n", start, range_end);
-            free(str_copy);
-            return -1;
-        }
-
-        ranges[count].start = start;
-        ranges[count].end = range_end;
-        count++;
-
-        token = strtok(NULL, ",");
-    }
-
-    free(str_copy);
-    return count;
-}
 
 // Function to parse comma-separated PIDs
 int parse_pids(const char *pid_str, int *pids, int max_pids) {
@@ -308,33 +215,6 @@ void recover_fault(const char *fault_name, int pid) {
             removed = 1;
         }
 
-        // Try block read error pin path
-        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-block-read-error-%s_%d", fault_name, pid);
-        if (unlink(buf) == 0) {
-            printf("Successfully removed pinned block read error BPF link: %s\n", buf);
-            removed = 1;
-        }
-
-        // Try block read error read syscall pin path
-        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-block-read-error-read-%s_%d", fault_name, pid);
-        if (unlink(buf) == 0) {
-            printf("Successfully removed pinned block read error read syscall BPF link: %s\n", buf);
-            removed = 1;
-        }
-
-        // Try path read error read syscall pin path
-        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-path-read-error-read-%s_%d", fault_name, pid);
-        if (unlink(buf) == 0) {
-            printf("Successfully removed pinned path read error read syscall BPF link: %s\n", buf);
-            removed = 1;
-        }
-
-        // Try path read error pread syscall pin path
-        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-path-read-error-pread-%s_%d", fault_name, pid);
-        if (unlink(buf) == 0) {
-            printf("Successfully removed pinned path read error pread syscall BPF link: %s\n", buf);
-            removed = 1;
-        }
 
         // Try latent sector error read pin path
         snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-lse-read-%s_%d", fault_name, pid);
@@ -371,12 +251,8 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "       %s <fault_name> <pid1,pid2,pid3,...> [optional_param]\n", argv[0]);
         fprintf(stderr, "\nFault-specific parameters:\n");
         fprintf(stderr, "  packet_loss_sendto, packet_loss_recvfrom: [drop_rate%%] (default: 30%%)\n");
-        fprintf(stderr, "  block_read_error: <block_ranges> (required, format: start1:end1,start2:end2,...)\n");
-        fprintf(stderr, "  path_read_error, directory_read_error: <directory_path> (required, directory path to target)\n");
         fprintf(stderr, "  latent_sector_error: [error_rate%%] (default: 50%%)\n");
         fprintf(stderr, "\nExamples:\n");
-        fprintf(stderr, "  %s block_read_error 1234 \"100:199,500:599\"\n", argv[0]);
-        fprintf(stderr, "  %s directory_read_error 1234 \"/var/openebs/local/pvc-mongodb-geo/data\"\n", argv[0]);
         fprintf(stderr, "  %s latent_sector_error 1234 50\n", argv[0]);
         return 1;
     }
@@ -415,49 +291,6 @@ int main(int argc, char *argv[]) {
         if (drop_rate > 100) drop_rate = 100;
     }
 
-    // Parse block ranges for block_read_error fault
-    struct block_range block_ranges[32];  // Maximum 32 block ranges
-    int num_block_ranges = 0;
-    if (fault->type == PT_KPROBE_BLOCK_READ_ERROR && argc >= 4) {
-        num_block_ranges = parse_block_ranges(argv[3], block_ranges, 32);
-        if (num_block_ranges <= 0) {
-            fprintf(stderr, "ERROR: Failed to parse block ranges from '%s'\n", argv[3]);
-            return 1;
-        }
-        printf("Configured %d block ranges: ", num_block_ranges);
-        for (int i = 0; i < num_block_ranges; i++) {
-            printf("%llu:%llu", block_ranges[i].start, block_ranges[i].end);
-            if (i < num_block_ranges - 1) printf(", ");
-        }
-        printf("\n");
-    } else if (fault->type == PT_KPROBE_BLOCK_READ_ERROR) {
-        fprintf(stderr, "ERROR: block_read_error fault requires block ranges parameter (format: start1:end1,start2:end2,...)\n");
-        return 1;
-    }
-
-    // Parse path patterns for path_read_error fault
-    struct path_pattern path_patterns[32];  // Maximum 32 path patterns
-    int num_path_patterns = 0;
-    if (fault->type == PT_KPROBE_PATH_READ_ERROR && argc >= 4) {
-        // For simplicity, treat the argument as a single directory path pattern
-        // We can extend this later to support comma-separated patterns
-        const char *dir_path = argv[3];
-        if (strlen(dir_path) >= MAX_PATH_LEN) {
-            fprintf(stderr, "ERROR: Directory path too long (max %d chars): '%s'\n", MAX_PATH_LEN - 1, dir_path);
-            return 1;
-        }
-
-        // Create a pattern that matches files in the directory
-        // For now, we'll match any file that starts with the directory path
-        snprintf(path_patterns[0].pattern, MAX_PATH_LEN, "%s/*", dir_path);
-        path_patterns[0].len = strlen(path_patterns[0].pattern);
-        num_path_patterns = 1;
-
-        printf("Configured %d path pattern: %s\n", num_path_patterns, path_patterns[0].pattern);
-    } else if (fault->type == PT_KPROBE_PATH_READ_ERROR) {
-        fprintf(stderr, "ERROR: path_read_error fault requires directory path parameter\n");
-        return 1;
-    }
 
     // Parse error rate for latent_sector_error fault
     int error_rate = 50;  // Default 50% error rate
@@ -726,191 +559,6 @@ int main(int argc, char *argv[]) {
 
         printf("Injected kprobe_packet_loss_recvfrom fault '%s' (syscall: %s, packet_loss: 20%%, error: %d) into PID %d\n",
                fault->name, fault->syscall, fault->params.kprobe_ERRN, pid);
-    } else if (fault->type == PT_KPROBE_BLOCK_READ_ERROR) {
-        struct kprobe_block_read_error_bpf *obj_block_read_error = kprobe_block_read_error_bpf__open_and_load();
-        if (!obj_block_read_error) {
-            fprintf(stderr, "ERROR: Failed to open/load kprobe_block_read_error BPF skeleton: %s\n", strerror(errno));
-            return 1;
-        }
-
-        // Update error map with the error code to return for blocked reads
-        if (bpf_map__update_elem(obj_block_read_error->maps.err_map,
-                                &key, sizeof(key),
-                                &fault->params.kprobe_ERRN, sizeof(fault->params.kprobe_ERRN),
-                                BPF_ANY) != 0) {
-            fprintf(stderr, "ERROR: Failed to update kprobe_block_read_error err_map: %s\n", strerror(errno));
-            kprobe_block_read_error_bpf__destroy(obj_block_read_error);
-            return 1;
-        }
-
-        // Update pid map
-        if (bpf_map__update_elem(obj_block_read_error->maps.pid_map,
-                                &pid, sizeof(pid),
-                                &value, sizeof(value),
-                                BPF_ANY) != 0) {
-            fprintf(stderr, "ERROR: Failed to update kprobe_block_read_error pid_map: %s\n", strerror(errno));
-            kprobe_block_read_error_bpf__destroy(obj_block_read_error);
-            return 1;
-        }
-
-        // Update block ranges maps
-        int zero_key = 0;
-        if (bpf_map__update_elem(obj_block_read_error->maps.num_ranges_map,
-                                &zero_key, sizeof(zero_key),
-                                &num_block_ranges, sizeof(num_block_ranges),
-                                BPF_ANY) != 0) {
-            fprintf(stderr, "ERROR: Failed to update kprobe_block_read_error num_ranges_map: %s\n", strerror(errno));
-            kprobe_block_read_error_bpf__destroy(obj_block_read_error);
-            return 1;
-        }
-
-        // Update individual block ranges
-        for (int i = 0; i < num_block_ranges; i++) {
-            if (bpf_map__update_elem(obj_block_read_error->maps.block_ranges_map,
-                                    &i, sizeof(i),
-                                    &block_ranges[i], sizeof(block_ranges[i]),
-                                    BPF_ANY) != 0) {
-                fprintf(stderr, "ERROR: Failed to update kprobe_block_read_error block_ranges_map[%d]: %s\n", i, strerror(errno));
-                kprobe_block_read_error_bpf__destroy(obj_block_read_error);
-                return 1;
-            }
-        }
-
-        // Attach using the same method as read_error fault (ksyscall attachment)
-        LIBBPF_OPTS(bpf_ksyscall_opts, opts_ksyscall);
-
-        // Attach to read syscall using ksyscall method (same as working read_error)
-        struct bpf_link *read_link = bpf_program__attach_ksyscall(obj_block_read_error->progs.kprobe_read_handler, fault->syscall, &opts_ksyscall);
-        if (libbpf_get_error(read_link)) {
-            fprintf(stderr, "ERROR: Failed to attach kprobe (via ksyscall) to %s: %s\n", fault->syscall, strerror(errno));
-            kprobe_block_read_error_bpf__destroy(obj_block_read_error);
-            return 1;
-        }
-
-        // Pin the read link
-        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-block-read-error-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
-            fprintf(stderr, "ERROR: Pin path too long for block read error: %s_%d\n", fault->name, pid);
-            bpf_link__destroy(read_link);
-            kprobe_block_read_error_bpf__destroy(obj_block_read_error);
-            return 1;
-        }
-
-        if (bpf_link__pin(read_link, pin_path_buf) != 0) {
-            fprintf(stderr, "WARN: Failed to pin block read error kprobe link for %s: %s\n", fault->name, strerror(errno));
-        } else {
-            printf("Pinned block read error kprobe link to %s\n", pin_path_buf);
-        }
-
-        bpf_link__destroy(read_link);
-        kprobe_block_read_error_bpf__destroy(obj_block_read_error);
-
-        printf("Injected kprobe_block_read_error fault '%s' (syscall: %s, EIO on %d block ranges) into PID %d\n",
-               fault->name, fault->syscall, num_block_ranges, pid);
-    } else if (fault->type == PT_KPROBE_PATH_READ_ERROR) {
-        struct kprobe_path_read_error_bpf *obj_path_read_error = kprobe_path_read_error_bpf__open_and_load();
-        if (!obj_path_read_error) {
-            fprintf(stderr, "ERROR: Failed to open/load kprobe_path_read_error BPF skeleton: %s\n", strerror(errno));
-            return 1;
-        }
-
-        // Update error map with the error code to return for path-matching reads
-        if (bpf_map__update_elem(obj_path_read_error->maps.err_map,
-                                &key, sizeof(key),
-                                &fault->params.kprobe_ERRN, sizeof(fault->params.kprobe_ERRN),
-                                BPF_ANY) != 0) {
-            fprintf(stderr, "ERROR: Failed to update kprobe_path_read_error err_map: %s\n", strerror(errno));
-            kprobe_path_read_error_bpf__destroy(obj_path_read_error);
-            return 1;
-        }
-
-        // Update pid map
-        if (bpf_map__update_elem(obj_path_read_error->maps.pid_map,
-                                &pid, sizeof(pid),
-                                &value, sizeof(value),
-                                BPF_ANY) != 0) {
-            fprintf(stderr, "ERROR: Failed to update kprobe_path_read_error pid_map: %s\n", strerror(errno));
-            kprobe_path_read_error_bpf__destroy(obj_path_read_error);
-            return 1;
-        }
-
-        // Update path patterns maps
-        int zero_key = 0;
-        if (bpf_map__update_elem(obj_path_read_error->maps.num_patterns_map,
-                                &zero_key, sizeof(zero_key),
-                                &num_path_patterns, sizeof(num_path_patterns),
-                                BPF_ANY) != 0) {
-            fprintf(stderr, "ERROR: Failed to update kprobe_path_read_error num_patterns_map: %s\n", strerror(errno));
-            kprobe_path_read_error_bpf__destroy(obj_path_read_error);
-            return 1;
-        }
-
-        // Update individual path patterns
-        for (int i = 0; i < num_path_patterns; i++) {
-            if (bpf_map__update_elem(obj_path_read_error->maps.path_patterns_map,
-                                    &i, sizeof(i),
-                                    &path_patterns[i], sizeof(path_patterns[i]),
-                                    BPF_ANY) != 0) {
-                fprintf(stderr, "ERROR: Failed to update kprobe_path_read_error path_patterns_map[%d]: %s\n", i, strerror(errno));
-                kprobe_path_read_error_bpf__destroy(obj_path_read_error);
-                return 1;
-            }
-        }
-
-        // Attach to read and pread64 syscalls
-        LIBBPF_OPTS(bpf_ksyscall_opts, opts_ksyscall);
-
-        // Attach to read syscall
-        struct bpf_link *read_link = bpf_program__attach_ksyscall(obj_path_read_error->progs.kprobe_read_handler, fault->syscall, &opts_ksyscall);
-        if (libbpf_get_error(read_link)) {
-            fprintf(stderr, "ERROR: Failed to attach kprobe (via ksyscall) to %s: %s\n", fault->syscall, strerror(errno));
-            kprobe_path_read_error_bpf__destroy(obj_path_read_error);
-            return 1;
-        }
-
-        // Pin the read link
-        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-path-read-error-read-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
-            fprintf(stderr, "ERROR: Pin path too long for path read error: %s_%d\n", fault->name, pid);
-            bpf_link__destroy(read_link);
-            kprobe_path_read_error_bpf__destroy(obj_path_read_error);
-            return 1;
-        }
-
-        if (bpf_link__pin(read_link, pin_path_buf) != 0) {
-            fprintf(stderr, "WARN: Failed to pin path read error read kprobe link for %s: %s\n", fault->name, strerror(errno));
-        } else {
-            printf("Pinned path read error read kprobe link to %s\n", pin_path_buf);
-        }
-
-        // Attach to pread64 syscall
-        struct bpf_link *pread_link = bpf_program__attach_ksyscall(obj_path_read_error->progs.kprobe_pread_handler, "pread64", &opts_ksyscall);
-        if (libbpf_get_error(pread_link)) {
-            fprintf(stderr, "ERROR: Failed to attach kprobe (via ksyscall) to pread64: %s\n", strerror(errno));
-            bpf_link__destroy(read_link);
-            kprobe_path_read_error_bpf__destroy(obj_path_read_error);
-            return 1;
-        }
-
-        // Pin the pread link
-        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-path-read-error-pread-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
-            fprintf(stderr, "ERROR: Pin path too long for path read error pread: %s_%d\n", fault->name, pid);
-            bpf_link__destroy(read_link);
-            bpf_link__destroy(pread_link);
-            kprobe_path_read_error_bpf__destroy(obj_path_read_error);
-            return 1;
-        }
-
-        if (bpf_link__pin(pread_link, pin_path_buf) != 0) {
-            fprintf(stderr, "WARN: Failed to pin path read error pread kprobe link for %s: %s\n", fault->name, strerror(errno));
-        } else {
-            printf("Pinned path read error pread kprobe link to %s\n", pin_path_buf);
-        }
-
-        bpf_link__destroy(read_link);
-        bpf_link__destroy(pread_link);
-        kprobe_path_read_error_bpf__destroy(obj_path_read_error);
-
-        printf("Injected kprobe_path_read_error fault '%s' (syscall: %s, EIO on %d path patterns) into PID %d\n",
-               fault->name, fault->syscall, num_path_patterns, pid);
     } else if (fault->type == PT_KPROBE_LATENT_SECTOR_ERROR) {
         struct kprobe_latent_sector_error_bpf *obj_lse = kprobe_latent_sector_error_bpf__open_and_load();
         if (!obj_lse) {
