@@ -1,6 +1,7 @@
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
+#include "pid_filter.bpf.h"
 
 struct {
   __uint(type, BPF_MAP_TYPE_ARRAY);
@@ -18,7 +19,7 @@ struct {
 
 SEC("kretprobe/sys_open")   /* replace with the function you want */
 int kretprobe_handler(struct pt_regs *ctx) {
-  int pid = bpf_get_current_pid_tgid() & 0xffffffff;
+  int pid = khaos_current_pid();
   int key = 0;
   long *forced_ret_val;
 

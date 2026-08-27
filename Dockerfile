@@ -38,13 +38,15 @@ COPY libbpf/ ./libbpf/
 # Build libbpf for the target architecture and install everything
 RUN cd libbpf/src && make clean && make && make install
 
-# Generate vmlinux.h from a known good kernel BTF or use generic fallback
+# Remove generated artifacts before creating the vmlinux.h used by this build.
+RUN make clean
+
+# Generate vmlinux.h from kernel BTF or use Linux's architecture-neutral BPF skeleton header
 RUN bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h 2>/dev/null || \
-    wget -O vmlinux.h https://raw.githubusercontent.com/libbpf/libbpf-bootstrap/master/vmlinux/vmlinux.h
+    wget -O vmlinux.h https://raw.githubusercontent.com/torvalds/linux/master/tools/perf/util/bpf_skel/vmlinux/vmlinux.h
 
 # Build eBPF objects and skeletons first
-RUN make clean && \
-    make kprobe.bpf.o kretprobe.bpf.o kprobe_packet_loss_sendto.bpf.o kprobe_packet_loss_recvfrom.bpf.o kprobe_latent_sector_error.bpf.o && \
+RUN make kprobe.bpf.o kretprobe.bpf.o kprobe_packet_loss_sendto.bpf.o kprobe_packet_loss_recvfrom.bpf.o kprobe_latent_sector_error.bpf.o && \
     make kprobe.skel.h kretprobe.skel.h kprobe_packet_loss_sendto.skel.h kprobe_packet_loss_recvfrom.skel.h kprobe_latent_sector_error.skel.h && \
     ldconfig && \
     make khaos-dynamic
@@ -70,9 +72,10 @@ COPY --from=builder /build/khaos ./khaos
 COPY --from=builder /build/*.bpf.o ./
 COPY --from=builder /build/*.skel.h ./
 COPY --from=builder /build/libbpf/src/libbpf.so* /usr/lib/
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
 
 # Ensure library path is set
 ENV LD_LIBRARY_PATH=/usr/lib
 
-ENTRYPOINT ["./khaos"]
-
+ENTRYPOINT ["./docker-entrypoint.sh"]

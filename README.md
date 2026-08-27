@@ -91,7 +91,7 @@ sudo docker run --rm -it \
   -v /sys/kernel/debug:/sys/kernel/debug \
   -v /sys/fs/bpf:/sys/fs/bpf \
   -v /proc:/host/proc:ro \
-  jacksonarthurclark/khaos-arm:latest <fault_type> <pid>
+  ghcr.io/xlab-uiuc/khaos:latest <fault_type> <pid>
 ```
 To recover:
 ```bash
@@ -102,9 +102,45 @@ sudo docker run --rm -it \
   -v /sys/kernel/debug:/sys/kernel/debug \
   -v /sys/fs/bpf:/sys/fs/bpf \
   -v /proc:/host/proc:ro \
-  jacksonarthurclark/khaos-arm:latest --recover <fault_type>
+  ghcr.io/xlab-uiuc/khaos:latest --recover <fault_type>
 ```
     ⚠️ You must run the container with --privileged and proper mounts to enable eBPF functionality.
+
+Check the kernel and container prerequisites with a temporary probe whose empty
+PID map prevents it from changing any syscall result:
+
+```bash
+sudo docker run --rm \
+  --privileged \
+  --pid=host \
+  -v /sys/fs/bpf:/sys/fs/bpf \
+  -v /sys/kernel/btf:/sys/kernel/btf:ro \
+  ghcr.io/xlab-uiuc/khaos:latest --check
+```
+
+The PID supplied to Khaos must be visible in the Khaos container's `/proc`, so
+the container must use the host PID namespace. Khaos reads that task's
+`NSpid` chain and `/proc/<pid>/ns/pid` identity automatically, then filters in
+the target task's active PID namespace. This also works when the target is in
+a nested Docker or Kubernetes PID namespace. To inspect the translation without
+injecting a fault, run `/khaos/khaos --resolve-pid <visible-pid>`.
+
+### Docker Compose and Harbor
+
+[`examples/docker-compose.yaml`](examples/docker-compose.yaml) provides a
+long-running privileged sidecar suitable for Docker Compose environments,
+including Harbor tasks. Keep Docker control in the trusted task harness; the
+agent container does not need the Docker socket. The harness can inject and
+recover faults with:
+
+```bash
+docker compose exec -T khaos /khaos/khaos read_error <pid>
+docker compose exec -T khaos /khaos/khaos --recover read_error <pid>
+```
+
+On kind, deploy the same image as a privileged `hostPID` DaemonSet. PIDs read
+from the kind node's `/proc` are matched in that node's PID namespace, even
+when the kind node itself is a Docker container.
 
 ### **Testing**
 ```bash
