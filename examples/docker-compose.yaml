@@ -1,6 +1,6 @@
 services:
   khaos:
-    image: ghcr.io/xlab-uiuc/khaos:latest
+    image: ghcr.io/sregym/khaos:latest
     privileged: true
     pid: host
     entrypoint: ["/bin/sh", "-ec"]

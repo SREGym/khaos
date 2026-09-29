@@ -91,7 +91,7 @@ sudo docker run --rm -it \
   -v /sys/kernel/debug:/sys/kernel/debug \
   -v /sys/fs/bpf:/sys/fs/bpf \
   -v /proc:/host/proc:ro \
-  ghcr.io/xlab-uiuc/khaos:latest <fault_type> <pid>
+  ghcr.io/sregym/khaos:latest <fault_type> <pid>
 ```
 To recover:
 ```bash
@@ -102,7 +102,7 @@ sudo docker run --rm -it \
   -v /sys/kernel/debug:/sys/kernel/debug \
   -v /sys/fs/bpf:/sys/fs/bpf \
   -v /proc:/host/proc:ro \
-  ghcr.io/xlab-uiuc/khaos:latest --recover <fault_type>
+  ghcr.io/sregym/khaos:latest --recover <fault_type>
 ```
     ⚠️ You must run the container with --privileged and proper mounts to enable eBPF functionality.
 
@@ -115,7 +115,7 @@ sudo docker run --rm \
   --pid=host \
   -v /sys/fs/bpf:/sys/fs/bpf \
   -v /sys/kernel/btf:/sys/kernel/btf:ro \
-  ghcr.io/xlab-uiuc/khaos:latest --check
+  ghcr.io/sregym/khaos:latest --check
 ```
 
 The PID supplied to Khaos must be visible in the Khaos container's `/proc`, so
@@ -225,7 +225,7 @@ sudo ln -s /usr/src/linux-headers-$(uname -r)/arch/arm64/include/generated/uapi/
 Prompt the following command into your shell to clone the repository and its submodules:
 
 ```sh
-git clone https://github.com/xlab-uiuc/khaos.git
+git clone https://github.com/SREGym/khaos.git
 cd khaos
 git submodule update --init --recursive
 ```
