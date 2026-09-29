@@ -4,19 +4,26 @@
 UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_M),x86_64)
     ARCH ?= x86
-    ARCH_FLAG = -D__x86_64__
     HOST_CC = gcc
 else ifeq ($(UNAME_M),aarch64)
     ARCH ?= arm64
-    ARCH_FLAG = -D__aarch64__
     HOST_CC = aarch64-linux-gnu-gcc
+endif
+
+ifeq ($(ARCH),x86)
+    ARCH_FLAG = -D__TARGET_ARCH_x86
+else ifneq ($(filter $(ARCH),arm arm64),)
+    ARCH_FLAG = -D__TARGET_ARCH_arm64
+else
+    $(error Unsupported ARCH '$(ARCH)'; expected x86, arm, or arm64)
 endif
 
 # =========================
 # BPF compiler settings
 # =========================
 BPF_CLANG = clang
-BPF_CFLAGS = -target bpf -Wall -O2 -g $(ARCH_FLAG) -I.
+MULTIARCH_INCLUDE = /usr/include/$(shell $(HOST_CC) -dumpmachine)
+BPF_CFLAGS = -target bpf -Wall -O2 -g $(ARCH_FLAG) -I. -I$(MULTIARCH_INCLUDE)
 BPF_STRIP = llvm-strip -g
 
 # =========================
@@ -79,24 +86,24 @@ vmlinux.h:
 	fi
 
 # Compile eBPF object files (depend on vmlinux.h)
-$(KPROBE_BPF_OBJ): kprobe.bpf.c vmlinux.h
+$(KPROBE_BPF_OBJ): kprobe.bpf.c pid_filter.bpf.h pid_namespace.h vmlinux.h
 	$(BPF_CLANG) $(BPF_CFLAGS) -c $< -o $@
 	$(BPF_STRIP) $@
 
-$(KRETPROBE_BPF_OBJ): kretprobe.bpf.c vmlinux.h
+$(KRETPROBE_BPF_OBJ): kretprobe.bpf.c pid_filter.bpf.h pid_namespace.h vmlinux.h
 	$(BPF_CLANG) $(BPF_CFLAGS) -c $< -o $@
 	$(BPF_STRIP) $@
 
-$(PACKET_LOSS_SENDTO_BPF_OBJ): network_faults/kprobe_packet_loss_sendto.bpf.c vmlinux.h
+$(PACKET_LOSS_SENDTO_BPF_OBJ): network_faults/kprobe_packet_loss_sendto.bpf.c pid_filter.bpf.h pid_namespace.h vmlinux.h
 	$(BPF_CLANG) $(BPF_CFLAGS) -c $< -o $@
 	$(BPF_STRIP) $@
 
-$(PACKET_LOSS_RECVFROM_BPF_OBJ): network_faults/kprobe_packet_loss_recvfrom.bpf.c vmlinux.h
+$(PACKET_LOSS_RECVFROM_BPF_OBJ): network_faults/kprobe_packet_loss_recvfrom.bpf.c pid_filter.bpf.h pid_namespace.h vmlinux.h
 	$(BPF_CLANG) $(BPF_CFLAGS) -c $< -o $@
 	$(BPF_STRIP) $@
 
 
-$(LATENT_SECTOR_ERROR_BPF_OBJ): kprobe_latent_sector_error.bpf.c vmlinux.h
+$(LATENT_SECTOR_ERROR_BPF_OBJ): kprobe_latent_sector_error.bpf.c pid_filter.bpf.h pid_namespace.h vmlinux.h
 	$(BPF_CLANG) $(BPF_CFLAGS) -c $< -o $@
 	$(BPF_STRIP) $@
 
@@ -118,11 +125,11 @@ $(LATENT_SECTOR_ERROR_SKEL): $(LATENT_SECTOR_ERROR_BPF_OBJ)
 	bpftool gen skeleton $< > $@
 
 # Compile host binary (using local shared libbpf for Docker)
-khaos-dynamic: khaos.c $(ALL_SKELS)
+khaos-dynamic: khaos.c pid_namespace.h $(ALL_SKELS)
 	$(HOST_CC) -std=c11 -Wall -O2 $(CFLAGS) khaos.c -o khaos ./libbpf/src/libbpf.so.1.6.0 $(LDFLAGS)
 
 # Compile host binary (static libbpf)
-khaos: khaos.c $(ALL_SKELS)
+khaos: khaos.c pid_namespace.h $(ALL_SKELS)
 	$(HOST_CC) -std=c11 -Wall -O2 $(CFLAGS) khaos.c -o $@ $(LIBBPF_STATIC) $(LDFLAGS)
 
 # Rule to compile each test binary

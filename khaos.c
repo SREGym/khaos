@@ -4,6 +4,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>      // For strerror
+#include <dirent.h>
+#include <limits.h>
+#include <linux/magic.h>
+#include <sys/stat.h>
+#include <sys/vfs.h>
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 
@@ -12,6 +17,154 @@
 #include "kprobe_packet_loss_sendto.skel.h"
 #include "kprobe_packet_loss_recvfrom.skel.h"
 #include "kprobe_latent_sector_error.skel.h"
+#include "pid_namespace.h"
+
+struct khaos_pid_target {
+    int visible_pid;
+    int namespace_pid;
+    struct khaos_pid_namespace pid_namespace;
+};
+
+static int read_pid_target(int visible_pid, struct khaos_pid_target *target)
+{
+    char path[64];
+    char line[512];
+    FILE *status;
+    struct stat stat_buf;
+    int namespace_pid = -1;
+
+    if (snprintf(path, sizeof(path), "/proc/%d/ns/pid", visible_pid) >= sizeof(path)) {
+        fprintf(stderr, "ERROR: PID namespace path is too long for PID %d\n", visible_pid);
+        return -1;
+    }
+
+    if (stat(path, &stat_buf) != 0) {
+        fprintf(stderr, "ERROR: Failed to stat PID namespace %s: %s\n", path, strerror(errno));
+        return -1;
+    }
+
+    target->pid_namespace.dev = (unsigned long long)stat_buf.st_dev;
+    target->pid_namespace.ino = (unsigned long long)stat_buf.st_ino;
+    if (!target->pid_namespace.dev || !target->pid_namespace.ino) {
+        fprintf(stderr, "ERROR: PID namespace %s has an invalid device or inode\n", path);
+        return -1;
+    }
+
+    if (snprintf(path, sizeof(path), "/proc/%d/status", visible_pid) >= sizeof(path)) {
+        fprintf(stderr, "ERROR: PID status path is too long for PID %d\n", visible_pid);
+        return -1;
+    }
+    status = fopen(path, "r");
+    if (!status) {
+        fprintf(stderr, "ERROR: Failed to open PID status %s: %s\n", path, strerror(errno));
+        return -1;
+    }
+
+    while (fgets(line, sizeof(line), status)) {
+        char *token;
+
+        if (strncmp(line, "NSpid:", 6) != 0)
+            continue;
+
+        token = strtok(line + 6, " \t\n");
+        while (token) {
+            char *end;
+            long value;
+
+            errno = 0;
+            value = strtol(token, &end, 10);
+            if (errno != 0 || *end != '\0' || value <= 0 || value > INT_MAX) {
+                fclose(status);
+                fprintf(stderr, "ERROR: Invalid NSpid value for visible PID %d\n", visible_pid);
+                return -1;
+            }
+            namespace_pid = (int)value;
+            token = strtok(NULL, " \t\n");
+        }
+        break;
+    }
+    fclose(status);
+
+    if (namespace_pid <= 0) {
+        fprintf(stderr, "ERROR: No NSpid found for visible PID %d\n", visible_pid);
+        return -1;
+    }
+
+    target->visible_pid = visible_pid;
+    target->namespace_pid = namespace_pid;
+
+    return 0;
+}
+
+static int configure_pid_namespace(struct bpf_map *map,
+                                   const struct khaos_pid_namespace *pid_namespace)
+{
+    int key = 0;
+
+    if (bpf_map__update_elem(map, &key, sizeof(key), pid_namespace,
+                             sizeof(*pid_namespace), BPF_ANY) != 0) {
+        fprintf(stderr, "ERROR: Failed to configure target PID namespace: %s\n", strerror(errno));
+        return -1;
+    }
+
+    return 0;
+}
+
+static int check_ebpf_program(const struct khaos_pid_namespace *pid_namespace)
+{
+    struct kprobe_bpf *obj;
+    struct bpf_link *link;
+    long link_error;
+
+    obj = kprobe_bpf__open_and_load();
+    if (!obj) {
+        fprintf(stderr, "UNSUPPORTED: failed to load the Khaos eBPF program: %s\n", strerror(errno));
+        return -1;
+    }
+    if (configure_pid_namespace(obj->maps.pid_namespace_map, pid_namespace) != 0) {
+        kprobe_bpf__destroy(obj);
+        return -1;
+    }
+
+    /* pid_map is empty, so this temporary probe can never override a syscall. */
+    LIBBPF_OPTS(bpf_ksyscall_opts, opts_ksyscall);
+    link = bpf_program__attach_ksyscall(obj->progs.kprobe_handler, "read", &opts_ksyscall);
+    link_error = libbpf_get_error(link);
+    if (link_error) {
+        fprintf(stderr, "UNSUPPORTED: failed to attach a Khaos read probe: %s\n",
+                strerror((int)-link_error));
+        kprobe_bpf__destroy(obj);
+        return -1;
+    }
+
+    bpf_link__destroy(link);
+    kprobe_bpf__destroy(obj);
+    return 0;
+}
+
+static int check_runtime(void)
+{
+    struct khaos_pid_target target;
+    struct statfs bpf_fs;
+
+    if (read_pid_target(getpid(), &target) != 0)
+        return 1;
+    if (statfs("/sys/fs/bpf", &bpf_fs) != 0 ||
+        (unsigned long)bpf_fs.f_type != (unsigned long)BPF_FS_MAGIC) {
+        fprintf(stderr, "UNSUPPORTED: /sys/fs/bpf is not a mounted BPF filesystem\n");
+        return 1;
+    }
+    if (access("/sys/kernel/btf/vmlinux", R_OK) != 0) {
+        fprintf(stderr, "UNSUPPORTED: kernel BTF is not readable at /sys/kernel/btf/vmlinux\n");
+        return 1;
+    }
+    if (check_ebpf_program(&target.pid_namespace) != 0)
+        return 1;
+
+    printf("SUPPORTED: ebpf-syscall pidns-dev=%llu pidns-ino=%llu\n",
+           target.pid_namespace.dev, target.pid_namespace.ino);
+    return 0;
+}
 
 // Define probe types
 enum probe_type {
@@ -171,65 +324,51 @@ int parse_pids(const char *pid_str, int *pids, int max_pids) {
 
 
 void recover_fault(const char *fault_name, int pid) {
-    char buf[256]; 
+    char fault_token[256];
+    char pid_suffix[32];
+    DIR *directory;
+    struct dirent *entry;
     int removed = 0;
 
-    if (pid == -1) {
-        // Recover all instances of fault
+    if (snprintf(fault_token, sizeof(fault_token), "-%s_", fault_name) >= sizeof(fault_token)) {
+        fprintf(stderr, "ERROR: Fault name is too long for recovery\n");
+        return;
+    }
+    if (pid != -1 && snprintf(pid_suffix, sizeof(pid_suffix), "_%d", pid) >= sizeof(pid_suffix)) {
+        fprintf(stderr, "ERROR: PID is too long for recovery\n");
+        return;
+    }
+
+    directory = opendir("/sys/fs/bpf");
+    if (!directory) {
+        fprintf(stderr, "ERROR: Failed to open /sys/fs/bpf: %s\n", strerror(errno));
+        return;
+    }
+
+    if (pid == -1)
         printf("Searching for all instances of fault '%s'...\n", fault_name);
-        
-        char cmd[512];
-        snprintf(cmd, sizeof(cmd), "find /sys/fs/bpf -name '*khaos-*-%s*' -delete 2>/dev/null", fault_name);
-        int result = system(cmd);
-        if (result == 0) {
-            printf("Recovery completed for fault: '%s'\n", fault_name);
-            removed = 1;
+
+    while ((entry = readdir(directory)) != NULL) {
+        char path[512];
+        size_t name_len;
+        size_t suffix_len;
+
+        if (strncmp(entry->d_name, "khaos-", 6) != 0 || !strstr(entry->d_name, fault_token))
+            continue;
+        if (pid != -1) {
+            name_len = strlen(entry->d_name);
+            suffix_len = strlen(pid_suffix);
+            if (name_len < suffix_len || strcmp(entry->d_name + name_len - suffix_len, pid_suffix) != 0)
+                continue;
         }
-    } else {
-
-        // Try kprobe pin path
-        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-%s_%d", fault_name, pid);
-        if (unlink(buf) == 0) {
-            printf("Successfully removed pinned kprobe BPF link: %s\n", buf);
-            removed = 1;
-        }     
-
-        // Try kretprobe pin path
-        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kretprobe-%s_%d", fault_name, pid);
-        if (unlink(buf) == 0) {
-            printf("Successfully removed pinned kretprobe BPF link: %s\n", buf);
-            removed = 1;
-        }
-
-        // Try packet loss sendto pin path
-        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-sendto-%s_%d", fault_name, pid);
-        if (unlink(buf) == 0) {
-            printf("Successfully removed pinned packet loss sendto BPF link: %s\n", buf);
-            removed = 1;
-        }
-
-        // Try packet loss recvfrom pin path
-        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-recvfrom-%s_%d", fault_name, pid);
-        if (unlink(buf) == 0) {
-            printf("Successfully removed pinned packet loss recvfrom BPF link: %s\n", buf);
-            removed = 1;
-        }
-
-
-        // Try latent sector error read pin path
-        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-lse-read-%s_%d", fault_name, pid);
-        if (unlink(buf) == 0) {
-            printf("Successfully removed pinned latent sector error read BPF link: %s\n", buf);
-            removed = 1;
-        }
-
-        // Try latent sector error pread pin path
-        snprintf(buf, sizeof(buf), "/sys/fs/bpf/khaos-kprobe-lse-pread-%s_%d", fault_name, pid);
-        if (unlink(buf) == 0) {
-            printf("Successfully removed pinned latent sector error pread BPF link: %s\n", buf);
-            removed = 1;
+        if (snprintf(path, sizeof(path), "/sys/fs/bpf/%s", entry->d_name) >= sizeof(path))
+            continue;
+        if (unlink(path) == 0) {
+            printf("Successfully removed pinned BPF link: %s\n", path);
+            removed++;
         }
     }
+    closedir(directory);
 
     if (!removed) {
         if (pid == -1) {
@@ -237,6 +376,8 @@ void recover_fault(const char *fault_name, int pid) {
         } else {
             fprintf(stderr, "Failed to remove any pinned BPF links for fault: '%s' with PID: %d\n", fault_name, pid);
         }
+    } else {
+        printf("Recovery completed for fault '%s': removed %d link(s)\n", fault_name, removed);
     }
 }
 
@@ -246,8 +387,23 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    if (argc == 2 && strcmp(argv[1], "--check") == 0)
+        return check_runtime();
+
+    if (argc == 3 && strcmp(argv[1], "--resolve-pid") == 0) {
+        struct khaos_pid_target target;
+        int visible_pid = atoi(argv[2]);
+
+        if (visible_pid <= 0 || read_pid_target(visible_pid, &target) != 0)
+            return 1;
+        printf("RESOLVED: visible-pid=%d namespace-pid=%d pidns-dev=%llu pidns-ino=%llu\n",
+               target.visible_pid, target.namespace_pid,
+               target.pid_namespace.dev, target.pid_namespace.ino);
+        return 0;
+    }
+
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s <fault_name> <pid> [optional_param] | --recover <fault_name> [pid]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <fault_name> <pid> [optional_param] | --recover <fault_name> [pid] | --check | --resolve-pid <pid>\n", argv[0]);
         fprintf(stderr, "       %s <fault_name> <pid1,pid2,pid3,...> [optional_param]\n", argv[0]);
         fprintf(stderr, "\nFault-specific parameters:\n");
         fprintf(stderr, "  packet_loss_sendto, packet_loss_recvfrom: [drop_rate%%] (default: 30%%)\n");
@@ -275,7 +431,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: Unknown fault type: %s\n", argv[1]);
         return 1;
     }
-    
+
     // Parse comma-separated PIDs
     int pids[64]; // Maximum 64 PIDs
     int num_pids = parse_pids(argv[2], pids, 64);
@@ -310,7 +466,13 @@ int main(int argc, char *argv[]) {
     // Loop through each PID and inject the fault
     for (int pid_idx = 0; pid_idx < num_pids; pid_idx++) {
         int pid = pids[pid_idx];
+        struct khaos_pid_target target;
+
         printf("\n--- Processing PID %d ---\n", pid);
+        if (read_pid_target(pid, &target) != 0)
+            return 1;
+        printf("Resolved visible PID %d to PID %d in namespace inode %llu\n",
+               pid, target.namespace_pid, target.pid_namespace.ino);
         
         struct bpf_link *link = NULL; 
         char pin_path_buf[512];
@@ -324,6 +486,11 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "ERROR: Failed to open/load kprobe BPF skeleton: %s\n", strerror(errno));
             return 1; 
         }
+
+        if (configure_pid_namespace(obj_kprobe->maps.pid_namespace_map, &target.pid_namespace) != 0) {
+            kprobe_bpf__destroy(obj_kprobe);
+            return 1;
+        }
         
         if (bpf_map__update_elem(obj_kprobe->maps.err_map, 
                                 &key, sizeof(key), 
@@ -335,7 +502,7 @@ int main(int argc, char *argv[]) {
         }
 
         if (bpf_map__update_elem(obj_kprobe->maps.pid_map,
-                                &pid, sizeof(pid),
+                                &target.namespace_pid, sizeof(target.namespace_pid),
                                 &value, sizeof(value),
                                 BPF_ANY) != 0) {
             fprintf(stderr, "ERROR: Failed to update kprobe pid_map: %s\n", strerror(errno));   
@@ -352,7 +519,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
+        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-%s_%llu_%d", fault->name, target.pid_namespace.ino, pid) >= sizeof(pin_path_buf)) {
             fprintf(stderr, "ERROR: Pin path too long for kprobe: %s_%d\n", fault->name, pid);
             bpf_link__destroy(link);
             kprobe_bpf__destroy(obj_kprobe);
@@ -360,10 +527,12 @@ int main(int argc, char *argv[]) {
         }
         
         if (bpf_link__pin(link, pin_path_buf) != 0) {
-            fprintf(stderr, "WARN: Failed to pin kprobe link for %s: %s\n", fault->name, strerror(errno));
-        } else {
-            printf("Pinned kprobe link to %s\n", pin_path_buf);
+            fprintf(stderr, "ERROR: Failed to pin kprobe link for %s: %s\n", fault->name, strerror(errno));
+            bpf_link__destroy(link);
+            kprobe_bpf__destroy(obj_kprobe);
+            return 1;
         }
+        printf("Pinned kprobe link to %s\n", pin_path_buf);
         
         bpf_link__destroy(link); 
         kprobe_bpf__destroy(obj_kprobe); 
@@ -377,6 +546,10 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "ERROR: Failed to open/load kretprobe BPF skeleton: %s\n", strerror(errno));
             return 1;
         }
+        if (configure_pid_namespace(obj_kretprobe->maps.pid_namespace_map, &target.pid_namespace) != 0) {
+            kretprobe_bpf__destroy(obj_kretprobe);
+            return 1;
+        }
 
         if (bpf_map__update_elem(obj_kretprobe->maps.ret_val_map, 
                                 &key, sizeof(key),
@@ -387,7 +560,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         if (bpf_map__update_elem(obj_kretprobe->maps.pid_map,
-                                &pid, sizeof(pid),
+                                &target.namespace_pid, sizeof(target.namespace_pid),
                                 &value, sizeof(value),
                                 BPF_ANY) != 0) {
             fprintf(stderr, "ERROR: Failed to update kretprobe pid_map: %s\n", strerror(errno));
@@ -407,7 +580,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kretprobe-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
+        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kretprobe-%s_%llu_%d", fault->name, target.pid_namespace.ino, pid) >= sizeof(pin_path_buf)) {
             fprintf(stderr, "ERROR: Pin path too long for kretprobe: %s_%d\n", fault->name, pid);
             bpf_link__destroy(link);
             kretprobe_bpf__destroy(obj_kretprobe);
@@ -415,10 +588,12 @@ int main(int argc, char *argv[]) {
         }
         
         if (bpf_link__pin(link, pin_path_buf) != 0) {
-            fprintf(stderr, "WARN: Failed to pin kretprobe link for %s: %s\n", fault->name, strerror(errno));
-        } else {
-            printf("Pinned kretprobe link to %s\n", pin_path_buf);
+            fprintf(stderr, "ERROR: Failed to pin kretprobe link for %s: %s\n", fault->name, strerror(errno));
+            bpf_link__destroy(link);
+            kretprobe_bpf__destroy(obj_kretprobe);
+            return 1;
         }
+        printf("Pinned kretprobe link to %s\n", pin_path_buf);
 
         bpf_link__destroy(link);
         kretprobe_bpf__destroy(obj_kretprobe);
@@ -429,6 +604,10 @@ int main(int argc, char *argv[]) {
         struct kprobe_packet_loss_sendto_bpf *obj_packet_loss_sendto = kprobe_packet_loss_sendto_bpf__open_and_load();
         if (!obj_packet_loss_sendto) {
             fprintf(stderr, "ERROR: Failed to open/load kprobe_packet_loss_sendto BPF skeleton: %s\n", strerror(errno));
+            return 1;
+        }
+        if (configure_pid_namespace(obj_packet_loss_sendto->maps.pid_namespace_map, &target.pid_namespace) != 0) {
+            kprobe_packet_loss_sendto_bpf__destroy(obj_packet_loss_sendto);
             return 1;
         }
 
@@ -444,7 +623,7 @@ int main(int argc, char *argv[]) {
 
         // Update pid map
         if (bpf_map__update_elem(obj_packet_loss_sendto->maps.pid_map,
-                                &pid, sizeof(pid),
+                                &target.namespace_pid, sizeof(target.namespace_pid),
                                 &value, sizeof(value),
                                 BPF_ANY) != 0) {
             fprintf(stderr, "ERROR: Failed to update kprobe_packet_loss_sendto pid_map: %s\n", strerror(errno));
@@ -474,7 +653,7 @@ int main(int argc, char *argv[]) {
         }
 
         // Pin the kprobe link
-        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-sendto-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
+        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-sendto-%s_%llu_%d", fault->name, target.pid_namespace.ino, pid) >= sizeof(pin_path_buf)) {
             fprintf(stderr, "ERROR: Pin path too long for packet loss sendto: %s_%d\n", fault->name, pid);
             bpf_link__destroy(ks_link);
             kprobe_packet_loss_sendto_bpf__destroy(obj_packet_loss_sendto);
@@ -482,10 +661,12 @@ int main(int argc, char *argv[]) {
         }
         
         if (bpf_link__pin(ks_link, pin_path_buf) != 0) {
-            fprintf(stderr, "WARN: Failed to pin packet loss sendto kprobe link for %s: %s\n", fault->name, strerror(errno));
-        } else {
-            printf("Pinned packet loss sendto kprobe link to %s\n", pin_path_buf);
+            fprintf(stderr, "ERROR: Failed to pin packet loss sendto kprobe link for %s: %s\n", fault->name, strerror(errno));
+            bpf_link__destroy(ks_link);
+            kprobe_packet_loss_sendto_bpf__destroy(obj_packet_loss_sendto);
+            return 1;
         }
+        printf("Pinned packet loss sendto kprobe link to %s\n", pin_path_buf);
 
         bpf_link__destroy(ks_link);
         kprobe_packet_loss_sendto_bpf__destroy(obj_packet_loss_sendto);
@@ -496,6 +677,10 @@ int main(int argc, char *argv[]) {
         struct kprobe_packet_loss_recvfrom_bpf *obj_packet_loss_recvfrom = kprobe_packet_loss_recvfrom_bpf__open_and_load();
         if (!obj_packet_loss_recvfrom) {
             fprintf(stderr, "ERROR: Failed to open/load kprobe_packet_loss_recvfrom BPF skeleton: %s\n", strerror(errno));
+            return 1;
+        }
+        if (configure_pid_namespace(obj_packet_loss_recvfrom->maps.pid_namespace_map, &target.pid_namespace) != 0) {
+            kprobe_packet_loss_recvfrom_bpf__destroy(obj_packet_loss_recvfrom);
             return 1;
         }
 
@@ -511,7 +696,7 @@ int main(int argc, char *argv[]) {
 
         // Update pid map
         if (bpf_map__update_elem(obj_packet_loss_recvfrom->maps.pid_map,
-                                &pid, sizeof(pid),
+                                &target.namespace_pid, sizeof(target.namespace_pid),
                                 &value, sizeof(value),
                                 BPF_ANY) != 0) {
             fprintf(stderr, "ERROR: Failed to update kprobe_packet_loss_recvfrom pid_map: %s\n", strerror(errno));
@@ -541,7 +726,7 @@ int main(int argc, char *argv[]) {
         }
 
         // Pin the kprobe link
-        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-recvfrom-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
+        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-packet-loss-recvfrom-%s_%llu_%d", fault->name, target.pid_namespace.ino, pid) >= sizeof(pin_path_buf)) {
             fprintf(stderr, "ERROR: Pin path too long for packet loss recvfrom: %s_%d\n", fault->name, pid);
             bpf_link__destroy(ks_link);
             kprobe_packet_loss_recvfrom_bpf__destroy(obj_packet_loss_recvfrom);
@@ -549,10 +734,12 @@ int main(int argc, char *argv[]) {
         }
         
         if (bpf_link__pin(ks_link, pin_path_buf) != 0) {
-            fprintf(stderr, "WARN: Failed to pin packet loss recvfrom kprobe link for %s: %s\n", fault->name, strerror(errno));
-        } else {
-            printf("Pinned packet loss recvfrom kprobe link to %s\n", pin_path_buf);
+            fprintf(stderr, "ERROR: Failed to pin packet loss recvfrom kprobe link for %s: %s\n", fault->name, strerror(errno));
+            bpf_link__destroy(ks_link);
+            kprobe_packet_loss_recvfrom_bpf__destroy(obj_packet_loss_recvfrom);
+            return 1;
         }
+        printf("Pinned packet loss recvfrom kprobe link to %s\n", pin_path_buf);
 
         bpf_link__destroy(ks_link);
         kprobe_packet_loss_recvfrom_bpf__destroy(obj_packet_loss_recvfrom);
@@ -561,8 +748,13 @@ int main(int argc, char *argv[]) {
                fault->name, fault->syscall, fault->params.kprobe_ERRN, pid);
     } else if (fault->type == PT_KPROBE_LATENT_SECTOR_ERROR) {
         struct kprobe_latent_sector_error_bpf *obj_lse = kprobe_latent_sector_error_bpf__open_and_load();
+        char read_pin_path[512];
         if (!obj_lse) {
             fprintf(stderr, "ERROR: Failed to open/load kprobe_latent_sector_error BPF skeleton: %s\n", strerror(errno));
+            return 1;
+        }
+        if (configure_pid_namespace(obj_lse->maps.pid_namespace_map, &target.pid_namespace) != 0) {
+            kprobe_latent_sector_error_bpf__destroy(obj_lse);
             return 1;
         }
 
@@ -578,7 +770,7 @@ int main(int argc, char *argv[]) {
 
         // Update pid map
         if (bpf_map__update_elem(obj_lse->maps.pid_map,
-                                &pid, sizeof(pid),
+                                &target.namespace_pid, sizeof(target.namespace_pid),
                                 &value, sizeof(value),
                                 BPF_ANY) != 0) {
             fprintf(stderr, "ERROR: Failed to update latent_sector_error pid_map: %s\n", strerror(errno));
@@ -606,31 +798,35 @@ int main(int argc, char *argv[]) {
         }
 
         // Pin the read link
-        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-lse-read-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
+        if (snprintf(read_pin_path, sizeof(read_pin_path), "/sys/fs/bpf/khaos-kprobe-lse-read-%s_%llu_%d", fault->name, target.pid_namespace.ino, pid) >= sizeof(read_pin_path)) {
             fprintf(stderr, "ERROR: Pin path too long for latent_sector_error: %s_%d\n", fault->name, pid);
             bpf_link__destroy(read_link);
             kprobe_latent_sector_error_bpf__destroy(obj_lse);
             return 1;
         }
 
-        if (bpf_link__pin(read_link, pin_path_buf) != 0) {
-            fprintf(stderr, "WARN: Failed to pin latent_sector_error read link for %s: %s\n", fault->name, strerror(errno));
-        } else {
-            printf("Pinned latent_sector_error read link to %s\n", pin_path_buf);
+        if (bpf_link__pin(read_link, read_pin_path) != 0) {
+            fprintf(stderr, "ERROR: Failed to pin latent_sector_error read link for %s: %s\n", fault->name, strerror(errno));
+            bpf_link__destroy(read_link);
+            kprobe_latent_sector_error_bpf__destroy(obj_lse);
+            return 1;
         }
+        printf("Pinned latent_sector_error read link to %s\n", read_pin_path);
 
         // Attach to pread64 syscall
         struct bpf_link *pread_link = bpf_program__attach_ksyscall(obj_lse->progs.kprobe_pread_handler, "pread64", &opts_ksyscall);
         if (libbpf_get_error(pread_link)) {
             fprintf(stderr, "ERROR: Failed to attach kprobe (via ksyscall) to pread64: %s\n", strerror(errno));
+            unlink(read_pin_path);
             bpf_link__destroy(read_link);
             kprobe_latent_sector_error_bpf__destroy(obj_lse);
             return 1;
         }
 
         // Pin the pread link
-        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-lse-pread-%s_%d", fault->name, pid) >= sizeof(pin_path_buf)) {
+        if (snprintf(pin_path_buf, sizeof(pin_path_buf), "/sys/fs/bpf/khaos-kprobe-lse-pread-%s_%llu_%d", fault->name, target.pid_namespace.ino, pid) >= sizeof(pin_path_buf)) {
             fprintf(stderr, "ERROR: Pin path too long for latent_sector_error pread: %s_%d\n", fault->name, pid);
+            unlink(read_pin_path);
             bpf_link__destroy(read_link);
             bpf_link__destroy(pread_link);
             kprobe_latent_sector_error_bpf__destroy(obj_lse);
@@ -638,10 +834,14 @@ int main(int argc, char *argv[]) {
         }
 
         if (bpf_link__pin(pread_link, pin_path_buf) != 0) {
-            fprintf(stderr, "WARN: Failed to pin latent_sector_error pread link for %s: %s\n", fault->name, strerror(errno));
-        } else {
-            printf("Pinned latent_sector_error pread link to %s\n", pin_path_buf);
+            fprintf(stderr, "ERROR: Failed to pin latent_sector_error pread link for %s: %s\n", fault->name, strerror(errno));
+            unlink(read_pin_path);
+            bpf_link__destroy(read_link);
+            bpf_link__destroy(pread_link);
+            kprobe_latent_sector_error_bpf__destroy(obj_lse);
+            return 1;
         }
+        printf("Pinned latent_sector_error pread link to %s\n", pin_path_buf);
 
         bpf_link__destroy(read_link);
         bpf_link__destroy(pread_link);

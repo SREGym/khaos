@@ -1,0 +1,22 @@
+services:
+  khaos:
+    image: ghcr.io/xlab-uiuc/khaos:latest
+    privileged: true
+    pid: host
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        if [ "$(stat -f -c %t /sys/fs/bpf)" != "cafe4a11" ]; then
+          mount -t bpf bpf /sys/fs/bpf
+        fi
+        exec sleep infinity
+    volumes:
+      - /sys/fs/bpf:/sys/fs/bpf
+      - /sys/kernel/debug:/sys/kernel/debug
+      - /sys/kernel/btf:/sys/kernel/btf:ro
+      - /proc:/host/proc:ro
+    healthcheck:
+      test: ["CMD", "/khaos/khaos", "--check"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
