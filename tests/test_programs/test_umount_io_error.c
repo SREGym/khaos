@@ -8,7 +8,7 @@
 #include <sys/stat.h>
 #include <signal.h>
 
-const char *target = "./test_mount";
+const char *target = "./test_umount";
 
 void cleanup(int signum) {
     // clean the test directory
@@ -21,11 +21,11 @@ int main() {
 
     // run with sudo becuase mounting requires root privileges
     if (geteuid() != 0) {
-        fprintf(stderr, "[mount_io_error test] Error: This program must be run with sudo.\n");
+        fprintf(stderr, "[umount_io_error test] Error: This program must be run with sudo.\n");
         return EXIT_FAILURE;
     }
 
-    printf("[mount_io_error test] Running with PID: %d\n", getpid());
+    printf("[umount_io_error test] Running with PID: %d\n", getpid());
     
     // creat directory for mount test
     mkdir(target, 0755);
@@ -33,16 +33,17 @@ int main() {
     signal(SIGINT, cleanup);  
     signal(SIGTERM, cleanup);
     
+    mount("none", target, "tmpfs", 0, NULL);
     while (1) {
         
-        int ret = mount("none", target, "tmpfs", 0, NULL);
+        int ret = umount(target);
 
         if (ret < 0) {
-            printf("[mount_io_error test] Error: %s (errno=%d)\n", strerror(errno), errno);
+            printf("[umount_io_error test] Error: %s (errno=%d)\n", strerror(errno), errno);
         } else {
-            printf("[mount_io_error test] Mounted tmpfs at %s\n", target);
+            printf("[umount_io_error test] Unmounted tmpfs at %s\n", target);
             
-            umount(target);
+            mount("none", target, "tmpfs", 0, NULL);
         }
 
         sleep(1);
